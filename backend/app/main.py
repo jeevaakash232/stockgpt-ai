@@ -29,6 +29,7 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:8080",
     "null",             # file:// protocol (opening index.html directly)
+    "https://stockgpt-ai1.netlify.app",   # production frontend
 ]
 if _FRONTEND_URL:
     ALLOWED_ORIGINS.append(_FRONTEND_URL)
@@ -58,7 +59,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
