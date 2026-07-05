@@ -1,30 +1,16 @@
 # StockGPT AI — Python dependencies
-# Install with: pip install -r requirements_stockgpt.txt
+# These are the exact versions tested and working locally.
 
-# Web framework
 fastapi==0.135.1
 uvicorn==0.41.0
 python-multipart==0.0.22
-
-# Data validation
 pydantic==2.12.5
-pydantic-settings==2.13.1
-
-# Environment
 python-dotenv==1.2.2
-
-# AI
 groq==1.1.1
-
-# Market data — Yahoo Finance
 yfinance==1.5.1
-
-# Market data — NSE scraper (optional, degrades gracefully if blocked)
-nsepython
-
-# Market data — Angel One SmartAPI (live option chain)
-smartapi-python
-pyotp
-
-# Database
-SQLAlchemy==2.0.48
+nsepython==2.97
+logzero==1.7.0
+pyotp==2.9.0
+smartapi-python==1.3.9
+openpyxl==3.1.5
+requests==2.32.5
