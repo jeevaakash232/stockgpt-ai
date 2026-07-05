@@ -17,3 +17,6 @@ openpyxl==3.1.5
 requests==2.32.5
 pytz==2024.1
 psycopg2-binary==2.9.9
+sqlalchemy==2.0.31
+apscheduler==3.10.4
+
