@@ -5,18 +5,53 @@
  * Auto-refreshes every 60 seconds (only updates changed values).
  */
 
-const REFRESH_INTERVAL = 60_000; // ms
-let _refreshTimer = null;
-let _prevValues   = {};   // track previous values to flash changes
-let _dashData     = {};   // store full dashboard data for limit changes
+const REFRESH_MARKET_HOURS = 15_000;   // 15 seconds during market hours
+const REFRESH_AFTER_HOURS  = 60_000;   // 60 seconds outside market hours
 
-// Per-table limits (changed by dropdown)
+let _refreshTimer = null;
+let _prevValues   = {};
+let _dashData     = {};
 let _limits = { gainers: 25, losers: 25, mostActive: 25 };
 
+
+// ---------------------------------------------------------------------------
+// Market hours detection (IST = UTC+5:30)
+// ---------------------------------------------------------------------------
+function isMarketOpen() {
+  const now = new Date();
+  // Convert to IST
+  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const day  = ist.getDay();          // 0=Sun, 6=Sat
+  const hour = ist.getHours();
+  const min  = ist.getMinutes();
+  const time = hour * 60 + min;       // minutes since midnight
+
+  // Monday–Friday, 9:15 AM – 3:30 PM IST
+  if (day === 0 || day === 6) return false;
+  return time >= 555 && time <= 930;  // 9*60+15=555, 15*60+30=930
+}
+
+function getRefreshInterval() {
+  return isMarketOpen() ? REFRESH_MARKET_HOURS : REFRESH_AFTER_HOURS;
+}
+
+
+// ---------------------------------------------------------------------------
+// Auto-refresh with smart interval
+// ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   loadDashboard();
-  _refreshTimer = setInterval(loadDashboard, REFRESH_INTERVAL);
+  scheduleNextRefresh();
 });
+
+function scheduleNextRefresh() {
+  clearTimeout(_refreshTimer);
+  const interval = getRefreshInterval();
+  _refreshTimer = setTimeout(() => {
+    loadDashboard();
+    scheduleNextRefresh();   // reschedule after each load
+  }, interval);
+}
 
 
 // ---------------------------------------------------------------------------
@@ -38,6 +73,8 @@ async function loadDashboard() {
     renderWatchlist(data.watchlist || []);
     hideBanner("offlineBanner");
     if (typeof updateLastRefresh === "function") updateLastRefresh();
+    // Update the refresh interval badge
+    _updateRefreshBadge();
   } catch (err) {
     console.error("Dashboard load failed:", err);
     // Show "waking up" if it's a network error (Render free tier sleep)
@@ -410,4 +447,17 @@ function showToast(message, type = "info") {
     </div>`;
   container.insertAdjacentHTML("beforeend", html);
   setTimeout(() => { const el = byId(id); if (el) el.remove(); }, 3500);
+}
+
+
+function _updateRefreshBadge() {
+  const badge = document.getElementById("refreshBadge");
+  if (!badge) return;
+  if (isMarketOpen()) {
+    badge.textContent = "● LIVE  15s";
+    badge.className   = "badge bg-success text-white ms-2 live-badge";
+  } else {
+    badge.textContent = "○ After Hours  60s";
+    badge.className   = "badge bg-secondary text-white ms-2";
+  }
 }

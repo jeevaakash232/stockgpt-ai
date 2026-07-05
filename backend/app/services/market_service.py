@@ -25,17 +25,13 @@ CACHE_TTL = 60
 
 def get_dashboard() -> dict:
     """
-    Single endpoint payload for the full dashboard:
-      - marketOverview (indices)
-      - topGainers / topLosers / mostActive
-      - indices (NIFTY, BANKNIFTY, SENSEX, VIX)
-      - watchlist (live prices)
-    Cached 60 s.
+    Single endpoint payload for the full dashboard.
+    TTL: 15s during market hours, 60s outside.
     """
     return cache_service.get_or_fetch(
         "dashboard",
         _build_dashboard,
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 
@@ -100,15 +96,14 @@ def get_indices() -> dict:
 
 def get_stock_detail(symbol: str) -> dict:
     """
-    Full detail for a single stock:
-    OHLCV + PCR + OI + Max Pain + support/resistance.
-    Cached 60 s per symbol.
+    Full detail for a single stock.
+    TTL: 15s during market hours, 60s outside.
     """
     key = f"stock_detail:{symbol.upper()}"
     return cache_service.get_or_fetch(
         key,
         lambda: _build_stock_detail(symbol),
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 

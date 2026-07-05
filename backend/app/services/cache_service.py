@@ -99,3 +99,26 @@ def start_background_refresh(key: str, fetch_fn: Callable, interval: int = TTL) 
     t = threading.Thread(target=_worker, daemon=True, name=f"cache-refresh-{key}")
     t.start()
     logger.info("Background refresh thread started for [%s] every %ds", key, interval)
+
+
+# ---------------------------------------------------------------------------
+# Smart TTL — 15s during NSE market hours, 60s outside
+# ---------------------------------------------------------------------------
+
+def market_ttl() -> int:
+    """
+    Returns 15 during NSE market hours (Mon-Fri 9:15-15:30 IST),
+    60 at all other times.
+    """
+    try:
+        from datetime import datetime
+        import pytz
+        ist  = pytz.timezone("Asia/Kolkata")
+        now  = datetime.now(ist)
+        day  = now.weekday()          # 0=Mon … 6=Sun
+        mins = now.hour * 60 + now.minute
+        if day < 5 and 555 <= mins <= 930:   # 9:15 AM – 3:30 PM
+            return 15
+    except Exception:
+        pass
+    return 60

@@ -349,13 +349,13 @@ def _fetch_oi_for_tokens(tokens: list[str]) -> dict[str, dict]:
 def get_option_chain_live(symbol: str) -> dict:
     """
     Returns LIVE option chain with per-strike Call/Put OI,
-    total OI, PCR, Max Pain. Cached 60s.
+    total OI, PCR, Max Pain. TTL: 15s market hours, 60s outside.
     """
     key = f"angel_oc:{symbol.upper()}"
     return cache_service.get_or_fetch(
         key,
         lambda: _fetch_option_chain_live(symbol),
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 
@@ -481,12 +481,12 @@ def _get_underlying_price(symbol: str) -> float:
 # ---------------------------------------------------------------------------
 
 def get_live_quote(symbol: str) -> dict:
-    """Live OHLCV + change for a single NSE stock. Cached 60s."""
+    """Live OHLCV + change for a single NSE stock. TTL: 15s market hours, 60s outside."""
     key = f"angel_quote:{symbol.upper()}"
     return cache_service.get_or_fetch(
         key,
         lambda: _fetch_live_quote(symbol),
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 

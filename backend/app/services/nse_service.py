@@ -42,15 +42,13 @@ except ImportError:
 
 def get_option_chain(symbol: str) -> dict:
     """
-    Fetch option chain for an NSE F&O symbol.
-    Tries Angel One live data first, falls back to nsepython/sample.
-    Cached 60 s.
+    Fetch option chain. TTL: 15s market hours, 60s outside.
     """
     key = f"option_chain:{symbol.upper()}"
     return cache_service.get_or_fetch(
         key,
         lambda: _fetch_option_chain(symbol),
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 

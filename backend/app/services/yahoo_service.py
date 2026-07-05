@@ -132,11 +132,11 @@ def _fetch_quote(symbol: str) -> dict:
 
 
 def get_indices() -> dict:
-    """Fetch all four indices in one call. Cached 60 s."""
+    """Fetch all four indices in one call. TTL: 15s market hours, 60s outside."""
     return cache_service.get_or_fetch(
         "indices",
         _fetch_indices,
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 
@@ -163,12 +163,12 @@ def _fetch_indices() -> dict:
 def get_top_movers() -> dict:
     """
     Fetch quotes for all tracked equities and compute top gainers,
-    top losers, and most active. Cached 60 s.
+    top losers, and most active. TTL: 15s market hours, 60s outside.
     """
     return cache_service.get_or_fetch(
         "top_movers",
         _fetch_top_movers,
-        ttl=CACHE_TTL,
+        ttl=cache_service.market_ttl(),
     )
 
 

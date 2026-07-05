@@ -11,7 +11,7 @@ To add more symbols: they are auto-loaded from CASH_TOKENS in angel_service.py.
 from app.services.pcr_service import calculate_pcr, signal
 from app.services import cache_service
 
-CACHE_TTL = 60  # seconds
+CACHE_TTL = 60  # fallback default
 
 # ---------------------------------------------------------------------------
 # Default OI values for PCR table (used when live OI is not yet fetched).
@@ -74,13 +74,12 @@ def get_sample_data() -> list[dict]:
 def get_market() -> list[dict]:
     """
     Return ALL NSE F&O stocks with live LTP from Angel One.
-    Fetched in batches of 50 tokens — one API call per batch.
-    Cached 60s.
+    Cache TTL: 15s during market hours, 60s outside.
     """
     return cache_service.get_or_fetch(
         "market_data",
         _build_market,
-        ttl=CACHE_TTL,
+        ttl=_get_cache_ttl(),
     )
 
 
