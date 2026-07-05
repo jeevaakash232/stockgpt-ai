@@ -426,3 +426,8 @@ body {
   z-index: 2;
   background: #1a1f2e;
 }
+
+/* Ensure Bootstrap text-muted has high contrast in dark mode */
+.text-muted {
+  color: var(--muted) !important;
+}
