@@ -16,13 +16,6 @@ from app.services import cache_service
 CACHE_TTL = 60  # fallback default
 
 # ---------------------------------------------------------------------------
-# Previous snapshot store — keyed by symbol
-# Holds values from the last completed refresh so we can compute deltas
-# ---------------------------------------------------------------------------
-_prev_snapshot: dict[str, dict] = {}   # symbol -> {pcr, call_oi, put_oi, ltp}
-
-
-# ---------------------------------------------------------------------------
 # Default OI values (fallback estimates when live OI not fetched)
 # ---------------------------------------------------------------------------
 DEFAULT_OI = {
@@ -49,6 +42,9 @@ DEFAULT_OI = {
 }
 
 _DEFAULT_OI_FALLBACK = {"call_oi": 100_000, "put_oi": 100_000, "max_pain": 0}
+
+# Cache key for the previous snapshot
+_PREV_SNAPSHOT_KEY = "market_prev_snapshot"
 
 
 def get_all_symbols() -> list[str]:
@@ -90,7 +86,8 @@ def get_market() -> list[dict]:
 
 
 def _build_market() -> list[dict]:
-    global _prev_snapshot
+    # Load previous snapshot from cache (survives refreshes, resets on restart)
+    prev_snapshot = cache_service.get(_PREV_SNAPSHOT_KEY) or {}
 
     live_ltps = _get_all_ltps_batch()
     result    = []
@@ -104,57 +101,55 @@ def _build_market() -> list[dict]:
         max_pain = oi["max_pain"]
         pcr      = calculate_pcr(call_oi, put_oi)
 
-        # ── Compute deltas from previous snapshot ──────────
-        prev = _prev_snapshot.get(sym)
+        # Retrieve previous values from snapshot
+        prev = prev_snapshot.get(sym)
 
-        prev_pcr      = prev["pcr"]      if prev else None
-        prev_call_oi  = prev["call_oi"]  if prev else None
-        prev_put_oi   = prev["put_oi"]   if prev else None
-        prev_ltp      = prev["ltp"]      if prev else None
+        prev_pcr     = prev["pcr"]     if prev else None
+        prev_call_oi = prev["call_oi"] if prev else None
+        prev_put_oi  = prev["put_oi"]  if prev else None
+        prev_ltp     = prev["ltp"]     if prev else None
 
         # Δ PCR
         pcr_change = None
-        if prev_pcr is not None and prev_pcr != 0:
+        if prev_pcr is not None:
             pcr_change = round(pcr - prev_pcr, 2)
 
         # Call OI Change %
         call_oi_chg_pct = None
-        if prev_call_oi is not None and prev_call_oi != 0:
+        if prev_call_oi and prev_call_oi != 0:
             call_oi_chg_pct = round(((call_oi - prev_call_oi) / prev_call_oi) * 100)
 
         # Put OI Change %
         put_oi_chg_pct = None
-        if prev_put_oi is not None and prev_put_oi != 0:
+        if prev_put_oi and prev_put_oi != 0:
             put_oi_chg_pct = round(((put_oi - prev_put_oi) / prev_put_oi) * 100)
 
         # Price Change %
         price_chg_pct = None
-        if prev_ltp is not None and prev_ltp > 0 and ltp > 0:
+        if prev_ltp and prev_ltp > 0 and ltp > 0:
             price_chg_pct = round(((ltp - prev_ltp) / prev_ltp) * 100, 1)
 
-        row = {
-            "symbol":           sym,
-            "ltp":              ltp,
-            "call_oi":          call_oi,
-            "put_oi":           put_oi,
-            "max_pain":         max_pain,
-            "pcr":              pcr,
-            "signal":           signal(pcr),
-            # Previous values (for reference)
-            "prev_pcr":         prev_pcr,
-            "prev_call_oi":     prev_call_oi,
-            "prev_put_oi":      prev_put_oi,
-            "prev_ltp":         prev_ltp,
-            # Delta metrics
-            "pcr_change":       pcr_change,
-            "call_oi_chg_pct":  call_oi_chg_pct,
-            "put_oi_chg_pct":   put_oi_chg_pct,
-            "price_chg_pct":    price_chg_pct,
-        }
-        result.append(row)
+        result.append({
+            "symbol":          sym,
+            "ltp":             ltp,
+            "call_oi":         call_oi,
+            "put_oi":          put_oi,
+            "max_pain":        max_pain,
+            "pcr":             pcr,
+            "signal":          signal(pcr),
+            "prev_pcr":        prev_pcr,
+            "prev_call_oi":    prev_call_oi,
+            "prev_put_oi":     prev_put_oi,
+            "prev_ltp":        prev_ltp,
+            "pcr_change":      pcr_change,
+            "call_oi_chg_pct": call_oi_chg_pct,
+            "put_oi_chg_pct":  put_oi_chg_pct,
+            "price_chg_pct":   price_chg_pct,
+        })
 
-    # Save current as next snapshot
-    _prev_snapshot = {
+    # Save current as next prev_snapshot with a long TTL (6 hours)
+    # so it persists through multiple refresh cycles
+    new_snapshot = {
         row["symbol"]: {
             "pcr":     row["pcr"],
             "call_oi": row["call_oi"],
@@ -162,8 +157,9 @@ def _build_market() -> list[dict]:
             "ltp":     row["ltp"],
         }
         for row in result
-        if row["ltp"] > 0   # only save valid prices
+        if row["ltp"] > 0
     }
+    cache_service.set(_PREV_SNAPSHOT_KEY, new_snapshot, ttl=21600)   # 6 hours
 
     return result
 
