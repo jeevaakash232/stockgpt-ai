@@ -8,7 +8,7 @@
  * To deploy: set RENDER_BACKEND_URL below to your Render service URL.
  */
 
-const RENDER_BACKEND_URL = "https://stockgpt-api.onrender.com";  // ← update after Render deploy
+const RENDER_BACKEND_URL = "https://stockgpt-ai.onrender.com";
 
 const API_BASE = (
   window.location.hostname === "localhost" ||
