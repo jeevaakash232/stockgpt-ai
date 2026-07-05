@@ -1,53 +1,72 @@
 """
 History Service
 ---------------
-Stores day-by-day stock snapshots and intraday ticks in SQLite.
-
-Tables:
-  daily_snapshot  — one row per symbol per calendar date (end-of-day)
-  intraday_ticks  — one row per symbol per refresh during market hours
-
-Automatic saves:
-  - During market hours: saved every refresh (via save_intraday_tick)
-  - At 3:30 PM IST:      daily snapshot saved (via save_daily_snapshot)
-  - Old ticks pruned:    after TICK_RETENTION_DAYS days
-
-DB location: backend/stockgpt.db
+Stores day-by-day stock snapshots and intraday ticks in SQLite or PostgreSQL.
 """
 
-import sqlite3
 import os
 import logging
 import threading
 from datetime import datetime, date, timedelta
-
 import pytz
+
+from app.utils.db import get_db_cursor, q, is_postgres
 
 logger    = logging.getLogger(__name__)
 IST       = pytz.timezone("Asia/Kolkata")
 _DB_LOCK  = threading.Lock()
 
 TICK_RETENTION_DAYS = 7     # keep intraday ticks for 7 days
-_DB_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "stockgpt.db")
-)
 
 
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
 
-def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(_DB_PATH, timeout=10)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")  # better concurrent write performance
-    return c
-
-
 def init_db() -> None:
     """Create tables if they don't exist."""
-    with _conn() as c:
-        c.executescript("""
+    if is_postgres():
+        schema = """
+            CREATE TABLE IF NOT EXISTS daily_snapshot (
+                id             SERIAL PRIMARY KEY,
+                trade_date     DATE    NOT NULL,
+                symbol         TEXT    NOT NULL,
+                ltp            DOUBLE PRECISION,
+                open           DOUBLE PRECISION,
+                high           DOUBLE PRECISION,
+                low            DOUBLE PRECISION,
+                prev_close     DOUBLE PRECISION,
+                call_oi        BIGINT,
+                put_oi         BIGINT,
+                pcr            DOUBLE PRECISION,
+                signal         TEXT,
+                max_pain       DOUBLE PRECISION,
+                price_chg_pct  DOUBLE PRECISION,
+                UNIQUE(trade_date, symbol)
+            );
+
+            CREATE TABLE IF NOT EXISTS intraday_ticks (
+                id             SERIAL PRIMARY KEY,
+                tick_time      TIMESTAMP NOT NULL,
+                trade_date     DATE     NOT NULL,
+                symbol         TEXT     NOT NULL,
+                ltp            DOUBLE PRECISION,
+                call_oi        BIGINT,
+                put_oi         BIGINT,
+                pcr            DOUBLE PRECISION,
+                signal         TEXT,
+                pcr_change     DOUBLE PRECISION,
+                price_chg_pct  DOUBLE PRECISION
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_daily_symbol_date
+                ON daily_snapshot(symbol, trade_date);
+
+            CREATE INDEX IF NOT EXISTS idx_tick_symbol_date
+                ON intraday_ticks(symbol, trade_date);
+        """
+    else:
+        schema = """
             CREATE TABLE IF NOT EXISTS daily_snapshot (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 trade_date  DATE    NOT NULL,
@@ -85,9 +104,21 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_tick_symbol_date
                 ON intraday_ticks(symbol, trade_date);
-        """)
-        c.commit()
-    logger.info("History DB ready at %s", _DB_PATH)
+        """
+
+    try:
+        with get_db_cursor() as (c, conn):
+            # For multi-statement schema in PostgreSQL we execute directly
+            if is_postgres():
+                c.execute(schema)
+            else:
+                # sqlite3 allows executescript on connection or cursor, but cursor.executescript is not standard.
+                # In sqlite3, executing standard multi-statement is safe through connection executescript
+                conn.executescript(schema)
+            conn.commit()
+        logger.info("History Database setup completed successfully.")
+    except Exception as exc:
+        logger.error("init_db failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -125,14 +156,15 @@ def save_intraday_tick(market_rows: list[dict]) -> None:
 
     try:
         with _DB_LOCK:
-            with _conn() as c:
-                c.executemany("""
+            with get_db_cursor() as (c, conn):
+                query = q("""
                     INSERT INTO intraday_ticks
                         (tick_time, trade_date, symbol, ltp, call_oi, put_oi,
                          pcr, signal, pcr_change, price_chg_pct)
                     VALUES (?,?,?,?,?,?,?,?,?,?)
-                """, rows)
-                c.commit()
+                """)
+                c.executemany(query, rows)
+                conn.commit()
         logger.debug("Saved %d intraday ticks for %s", len(rows), trade_date)
     except Exception as exc:
         logger.error("save_intraday_tick failed: %s", exc)
@@ -142,7 +174,6 @@ def save_daily_snapshot(market_rows: list[dict]) -> None:
     """
     Save end-of-day snapshot for all symbols.
     Called once at market close (3:30 PM IST).
-    Uses INSERT OR REPLACE so re-running at close is safe.
     """
     if not market_rows:
         return
@@ -171,14 +202,35 @@ def save_daily_snapshot(market_rows: list[dict]) -> None:
 
     try:
         with _DB_LOCK:
-            with _conn() as c:
-                c.executemany("""
-                    INSERT OR REPLACE INTO daily_snapshot
-                        (trade_date, symbol, ltp, open, high, low, prev_close,
-                         call_oi, put_oi, pcr, signal, max_pain, price_chg_pct)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, rows)
-                c.commit()
+            with get_db_cursor() as (c, conn):
+                if is_postgres():
+                    query = """
+                        INSERT INTO daily_snapshot
+                            (trade_date, symbol, ltp, open, high, low, prev_close,
+                             call_oi, put_oi, pcr, signal, max_pain, price_chg_pct)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (trade_date, symbol) DO UPDATE SET
+                            ltp = EXCLUDED.ltp,
+                            open = EXCLUDED.open,
+                            high = EXCLUDED.high,
+                            low = EXCLUDED.low,
+                            prev_close = EXCLUDED.prev_close,
+                            call_oi = EXCLUDED.call_oi,
+                            put_oi = EXCLUDED.put_oi,
+                            pcr = EXCLUDED.pcr,
+                            signal = EXCLUDED.signal,
+                            max_pain = EXCLUDED.max_pain,
+                            price_chg_pct = EXCLUDED.price_chg_pct
+                    """
+                else:
+                    query = """
+                        INSERT OR REPLACE INTO daily_snapshot
+                            (trade_date, symbol, ltp, open, high, low, prev_close,
+                             call_oi, put_oi, pcr, signal, max_pain, price_chg_pct)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """
+                c.executemany(query, rows)
+                conn.commit()
         logger.info("Saved daily snapshot for %s (%d symbols)", trade_date, len(rows))
     except Exception as exc:
         logger.error("save_daily_snapshot failed: %s", exc)
@@ -189,12 +241,13 @@ def prune_old_ticks() -> None:
     cutoff = (date.today() - timedelta(days=TICK_RETENTION_DAYS)).isoformat()
     try:
         with _DB_LOCK:
-            with _conn() as c:
-                result = c.execute(
-                    "DELETE FROM intraday_ticks WHERE trade_date < ?", (cutoff,)
+            with get_db_cursor() as (c, conn):
+                c.execute(
+                    q("DELETE FROM intraday_ticks WHERE trade_date < ?"), (cutoff,)
                 )
-                c.commit()
-        logger.info("Pruned %d old ticks (before %s)", result.rowcount, cutoff)
+                conn.commit()
+                rowcount = c.rowcount
+        logger.info("Pruned %d old ticks (before %s)", rowcount, cutoff)
     except Exception as exc:
         logger.error("prune_old_ticks failed: %s", exc)
 
@@ -211,15 +264,25 @@ def get_daily_history(symbol: str, days: int = 30) -> list[dict]:
     symbol = symbol.upper()
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     try:
-        with _conn() as c:
-            rows = c.execute("""
+        with get_db_cursor() as (c, conn):
+            query = q("""
                 SELECT trade_date, symbol, ltp, call_oi, put_oi, pcr,
                        signal, max_pain, price_chg_pct, prev_close
                 FROM   daily_snapshot
                 WHERE  symbol = ? AND trade_date >= ?
                 ORDER  BY trade_date ASC
-            """, (symbol, cutoff)).fetchall()
-        return [dict(r) for r in rows]
+            """)
+            c.execute(query, (symbol, cutoff))
+            rows = c.fetchall()
+        
+        # Convert date column to string for consistent API format across database engines
+        result = []
+        for r in rows:
+            d = dict(r)
+            if hasattr(d.get("trade_date"), "isoformat"):
+                d["trade_date"] = d["trade_date"].isoformat()
+            result.append(d)
+        return result
     except Exception as exc:
         logger.error("get_daily_history failed [%s]: %s", symbol, exc)
         return []
@@ -232,15 +295,25 @@ def get_intraday_ticks(symbol: str, trade_date: str = None) -> list[dict]:
     symbol     = symbol.upper()
     trade_date = trade_date or datetime.now(IST).strftime("%Y-%m-%d")
     try:
-        with _conn() as c:
-            rows = c.execute("""
+        with get_db_cursor() as (c, conn):
+            query = q("""
                 SELECT tick_time, ltp, pcr, call_oi, put_oi,
                        signal, pcr_change, price_chg_pct
                 FROM   intraday_ticks
                 WHERE  symbol = ? AND trade_date = ?
                 ORDER  BY tick_time ASC
-            """, (symbol, trade_date)).fetchall()
-        return [dict(r) for r in rows]
+            """)
+            c.execute(query, (symbol, trade_date))
+            rows = c.fetchall()
+        
+        # Convert tick_time to string for consistent API format
+        result = []
+        for r in rows:
+            d = dict(r)
+            if hasattr(d.get("tick_time"), "strftime"):
+                d["tick_time"] = d["tick_time"].strftime("%Y-%m-%d %H:%M:%S")
+            result.append(d)
+        return result
     except Exception as exc:
         logger.error("get_intraday_ticks failed [%s]: %s", symbol, exc)
         return []
@@ -253,27 +326,35 @@ def get_all_symbols_history(trade_date: str = None) -> list[dict]:
     """
     trade_date = trade_date or datetime.now(IST).strftime("%Y-%m-%d")
     try:
-        with _conn() as c:
+        with get_db_cursor() as (c, conn):
             # Try exact date first
-            rows = c.execute("""
+            query = q("""
                 SELECT * FROM daily_snapshot
                 WHERE trade_date = ?
                 ORDER BY symbol ASC
-            """, (trade_date,)).fetchall()
+            """)
+            c.execute(query, (trade_date,))
+            rows = c.fetchall()
 
             if not rows:
                 # Fall back to most recent available date
-                latest = c.execute(
-                    "SELECT MAX(trade_date) as dt FROM daily_snapshot"
-                ).fetchone()
+                c.execute("SELECT MAX(trade_date) as dt FROM daily_snapshot")
+                latest = c.fetchone()
                 if latest and latest["dt"]:
-                    rows = c.execute("""
+                    c.execute(q("""
                         SELECT * FROM daily_snapshot
                         WHERE trade_date = ?
                         ORDER BY symbol ASC
-                    """, (latest["dt"],)).fetchall()
+                    """), (latest["dt"],))
+                    rows = c.fetchall()
 
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if hasattr(d.get("trade_date"), "isoformat"):
+                d["trade_date"] = d["trade_date"].isoformat()
+            result.append(d)
+        return result
     except Exception as exc:
         logger.error("get_all_symbols_history failed: %s", exc)
         return []
@@ -287,18 +368,15 @@ def get_previous_day_snapshot() -> dict:
         now_ist = datetime.now(IST)
         today_str = now_ist.strftime("%Y-%m-%d")
 
-        with _conn() as c:
+        with get_db_cursor() as (c, conn):
             # Find the most recent date strictly before today
-            row = c.execute(
-                "SELECT MAX(trade_date) as dt FROM daily_snapshot WHERE trade_date < ?",
-                (today_str,)
-            ).fetchone()
+            c.execute(q("SELECT MAX(trade_date) as dt FROM daily_snapshot WHERE trade_date < ?"), (today_str,))
+            row = c.fetchone()
 
             if not row or not row["dt"]:
                 # If no date before today, fallback to the latest date overall
-                row = c.execute(
-                    "SELECT MAX(trade_date) as dt FROM daily_snapshot"
-                ).fetchone()
+                c.execute("SELECT MAX(trade_date) as dt FROM daily_snapshot")
+                row = c.fetchone()
 
             if not row or not row["dt"]:
                 return {}
@@ -306,10 +384,11 @@ def get_previous_day_snapshot() -> dict:
             prev_date = row["dt"]
 
             # Fetch snapshots for that date
-            rows = c.execute(
-                "SELECT symbol, ltp, call_oi, put_oi, pcr, signal, max_pain, prev_close FROM daily_snapshot WHERE trade_date = ?",
-                (prev_date,)
-            ).fetchall()
+            c.execute(q("""
+                SELECT symbol, ltp, call_oi, put_oi, pcr, signal, max_pain, prev_close 
+                FROM daily_snapshot WHERE trade_date = ?
+            """), (prev_date,))
+            rows = c.fetchall()
 
             return {
                 r["symbol"]: {
@@ -330,14 +409,23 @@ def get_previous_day_snapshot() -> dict:
 def get_available_dates() -> list[str]:
     """Return all dates for which we have daily snapshots, newest first."""
     try:
-        with _conn() as c:
-            rows = c.execute("""
+        with get_db_cursor() as (c, conn):
+            c.execute("""
                 SELECT DISTINCT trade_date
                 FROM   daily_snapshot
                 ORDER  BY trade_date DESC
                 LIMIT  90
-            """).fetchall()
-        return [r["trade_date"] for r in rows]
+            """)
+            rows = c.fetchall()
+            
+        dates = []
+        for r in rows:
+            val = r["trade_date"]
+            if hasattr(val, "isoformat"):
+                dates.append(val.isoformat())
+            else:
+                dates.append(str(val))
+        return dates
     except Exception as exc:
         logger.error("get_available_dates failed: %s", exc)
         return []
@@ -346,27 +434,34 @@ def get_available_dates() -> list[str]:
 def get_db_stats() -> dict:
     """Return database statistics for the admin endpoint."""
     try:
-        with _conn() as c:
-            daily_count = c.execute(
-                "SELECT COUNT(*) as n FROM daily_snapshot"
-            ).fetchone()["n"]
-            tick_count = c.execute(
-                "SELECT COUNT(*) as n FROM intraday_ticks"
-            ).fetchone()["n"]
-            dates = c.execute(
-                "SELECT COUNT(DISTINCT trade_date) as n FROM daily_snapshot"
-            ).fetchone()["n"]
-            symbols = c.execute(
-                "SELECT COUNT(DISTINCT symbol) as n FROM daily_snapshot"
-            ).fetchone()["n"]
-        db_size_kb = os.path.getsize(_DB_PATH) // 1024 if os.path.exists(_DB_PATH) else 0
+        with get_db_cursor() as (c, conn):
+            c.execute("SELECT COUNT(*) as n FROM daily_snapshot")
+            daily_count = c.fetchone()["n"]
+            
+            c.execute("SELECT COUNT(*) as n FROM intraday_ticks")
+            tick_count = c.fetchone()["n"]
+            
+            c.execute("SELECT COUNT(DISTINCT trade_date) as n FROM daily_snapshot")
+            dates = c.fetchone()["n"]
+            
+            c.execute("SELECT COUNT(DISTINCT symbol) as n FROM daily_snapshot")
+            symbols = c.fetchone()["n"]
+            
+        if is_postgres():
+            db_size_kb = 0
+            db_path = "PostgreSQL cloud database"
+        else:
+            from app.utils.db import _DB_PATH
+            db_size_kb = os.path.getsize(_DB_PATH) // 1024 if os.path.exists(_DB_PATH) else 0
+            db_path = _DB_PATH
+            
         return {
             "daily_rows":    daily_count,
             "intraday_ticks": tick_count,
             "trading_days":  dates,
             "symbols":       symbols,
             "db_size_kb":    db_size_kb,
-            "db_path":       _DB_PATH,
+            "db_path":       db_path,
         }
     except Exception as exc:
         return {"error": str(exc)}
