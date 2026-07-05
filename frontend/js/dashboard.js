@@ -364,24 +364,33 @@ let _wakeSeconds = 0;
 function startWakeCountdown() {
   clearInterval(_wakeTimer);
   _wakeSeconds = 0;
+  // Ping the root URL (not /api) — lighter and always responds
+  const pingUrl = API_BASE.replace("/api", "/");
+
   _wakeTimer = setInterval(() => {
     _wakeSeconds += 8;
     const el = document.getElementById("wakeCountdown");
     if (el) el.textContent = `(${_wakeSeconds}s elapsed)`;
 
-    // Try again every 8 seconds
-    fetch(`${API_BASE}/`)
-      .then(r => { if (r.ok) { clearInterval(_wakeTimer); loadDashboard(); } })
-      .catch(() => {});
+    // Try to reach the backend root
+    fetch(pingUrl, { cache: "no-store" })
+      .then(r => {
+        if (r.ok) {
+          clearInterval(_wakeTimer);
+          hideBanner("offlineBanner");
+          loadDashboard();   // load data now that server is awake
+        }
+      })
+      .catch(() => {});  // still waking — keep waiting
 
-    // Give up after 90 seconds
-    if (_wakeSeconds >= 90) {
+    // Give up after 3 minutes (Render can be slow on cold start)
+    if (_wakeSeconds >= 180) {
       clearInterval(_wakeTimer);
       showBanner("offlineBanner",
         `<i class="bi bi-exclamation-triangle-fill me-2"></i>
-         <strong>Server unreachable.</strong>
-         Backend at <code>${API_BASE.replace("/api","")}</code> is not responding.
-         <a href="${API_BASE.replace("/api","")}/docs" target="_blank" class="ms-2">Check status</a>`
+         <strong>Server is taking too long to wake up.</strong>
+         Try <a href="https://stockgpt-ai.onrender.com/docs" target="_blank">opening the backend</a>
+         directly to force it awake, then <a href="javascript:location.reload()">refresh this page</a>.`
       );
     }
   }, 8000);

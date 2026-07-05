@@ -29,19 +29,31 @@ const API_BASE = (
 async function apiFetch(path, options = {}) {
   const url = `${API_BASE}${path}`;
 
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  // On production (Render), allow up to 2 minutes for cold starts
+  const isLocal = window.location.hostname === "localhost" ||
+                  window.location.hostname === "127.0.0.1";
+  const controller = new AbortController();
+  const timeoutMs  = isLocal ? 30000 : 120000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    try {
-      const err = await response.json();
-      message = err.detail || message;
-    } catch (_) {}
-    throw new Error(message);
+  try {
+    const response = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      ...options,
+    });
+
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const err = await response.json();
+        message = err.detail || message;
+      } catch (_) {}
+      throw new Error(message);
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timer);
   }
-
-  return response.json();
 }
