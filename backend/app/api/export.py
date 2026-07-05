@@ -1,0 +1,259 @@
+"""
+Export API
+----------
+GET /api/export/excel  — Download all NSE F&O stocks as clean editable Excel
+GET /api/export/csv    — Download all stocks as plain CSV
+
+Excel format:
+  - White background, Calibri font, standard cell sizes
+  - Blue header row, light green/red row tints (fully editable)
+  - No merged cells (except info row), no locked cells
+  - 6 sheets: All Stocks, Top Gainers, Top Losers, Most Active, Indices, Watchlist
+"""
+
+import io
+from datetime import datetime
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Excel export
+# ---------------------------------------------------------------------------
+
+@router.get("/export/excel", summary="Download all stock data as Excel")
+def export_excel():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    # ── Data ──────────────────────────────────────────────────
+    from app.services.market_data    import get_market
+    from app.services.market_service import (
+        get_top_gainers, get_top_losers, get_most_active, get_indices
+    )
+    from app.services import watchlist_service
+
+    market  = get_market()
+    gainers = get_top_gainers()
+    losers  = get_top_losers()
+    active  = get_most_active()
+    watchl  = watchlist_service.get_watchlist_with_prices()
+    indices = get_indices()
+
+    now   = datetime.now()
+    stamp = now.strftime("%d %b %Y  %H:%M:%S")
+
+    # ── Shared styles ─────────────────────────────────────────
+    HDR_FILL  = PatternFill("solid", fgColor="1F4E79")   # dark blue
+    GRN_FILL  = PatternFill("solid", fgColor="E2EFDA")   # light green
+    RED_FILL  = PatternFill("solid", fgColor="FCE4D6")   # light red/orange
+    WHT_FILL  = PatternFill("solid", fgColor="FFFFFF")
+
+    HDR_FONT  = Font(name="Calibri", bold=True,  color="FFFFFF", size=11)
+    BODY_FONT = Font(name="Calibri", bold=False, color="000000", size=11)
+    INFO_FONT = Font(name="Calibri", italic=True, color="595959", size=10)
+    BOLD_GRN  = Font(name="Calibri", bold=True,  color="375623", size=11)
+    BOLD_RED  = Font(name="Calibri", bold=True,  color="9C0006", size=11)
+    BOLD_BLU  = Font(name="Calibri", bold=True,  color="203864", size=11)
+
+    _side    = Side(style="thin", color="BFBFBF")
+    BORDER   = Border(left=_side, right=_side, top=_side, bottom=_side)
+    CENTER   = Alignment(horizontal="center", vertical="center")
+    LEFT     = Alignment(horizontal="left",   vertical="center")
+    RIGHT    = Alignment(horizontal="right",  vertical="center")
+
+    def _widths(ws, widths):
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+    def _header(ws, row, cols):
+        for c, h in enumerate(cols, 1):
+            cell            = ws.cell(row=row, column=c, value=h)
+            cell.font       = HDR_FONT
+            cell.fill       = HDR_FILL
+            cell.alignment  = CENTER
+            cell.border     = BORDER
+        ws.row_dimensions[row].height = 18
+
+    def _info(ws, row, text):
+        cell           = ws.cell(row=row, column=1, value=text)
+        cell.font      = INFO_FONT
+        cell.alignment = LEFT
+        ws.row_dimensions[row].height = 15
+
+    def _row(ws, row_n, values, fill=None):
+        for c, v in enumerate(values, 1):
+            cell           = ws.cell(row=row_n, column=c, value=v)
+            cell.font      = BODY_FONT
+            cell.fill      = fill or WHT_FILL
+            cell.border    = BORDER
+            cell.alignment = RIGHT if isinstance(v, (int, float)) else LEFT
+
+    def _signal_fill(sig_str):
+        s = (sig_str or "").lower()
+        if "bullish" in s: return GRN_FILL
+        if "bearish" in s: return RED_FILL
+        return WHT_FILL
+
+    # ── Workbook ──────────────────────────────────────────────
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # ════════════════════════════════════════════════════════
+    # Sheet 1 — All Stocks (209 NSE F&O)
+    # ════════════════════════════════════════════════════════
+    ws = wb.create_sheet("All Stocks")
+    ws.freeze_panes = "A3"
+
+    _info(ws, 1, f"StockGPT AI — NSE F&O Live Market Data   |   Generated: {stamp}   |   {len(market)} stocks")
+    _header(ws, 2, ["#", "Symbol", "LTP (₹)", "PCR", "Signal", "Call OI", "Put OI", "Max Pain (₹)"])
+
+    for i, s in enumerate(market):
+        r    = i + 3
+        fill = _signal_fill(s["signal"])
+        _row(ws, r, [i+1, s["symbol"], s["ltp"], s["pcr"], s["signal"],
+                     s["call_oi"], s["put_oi"], s["max_pain"]], fill)
+
+        # Bold coloured text for signal column
+        sig_cell = ws.cell(row=r, column=5)
+        sig_lower = s["signal"].lower()
+        if "bullish" in sig_lower:   sig_cell.font = BOLD_GRN
+        elif "bearish" in sig_lower: sig_cell.font = BOLD_RED
+        else:                        sig_cell.font = BOLD_BLU
+
+        ws.cell(row=r, column=3).number_format = '#,##0.00'
+        ws.cell(row=r, column=4).number_format = '0.00'
+        ws.cell(row=r, column=6).number_format = '#,##0'
+        ws.cell(row=r, column=7).number_format = '#,##0'
+        ws.cell(row=r, column=8).number_format = '#,##0.00'
+
+    _widths(ws, [4, 16, 13, 7, 16, 14, 14, 15])
+
+    # ════════════════════════════════════════════════════════
+    # Sheet 2 — Top Gainers
+    # ════════════════════════════════════════════════════════
+    ws2 = wb.create_sheet("Top Gainers")
+    ws2.freeze_panes = "A3"
+    _info(ws2, 1, f"Top Gainers by % Change   |   {stamp}")
+    _header(ws2, 2, ["#", "Symbol", "Price (₹)", "Change %", "High (₹)", "Low (₹)", "Volume"])
+    for i, s in enumerate(gainers):
+        r = i + 3
+        _row(ws2, r, [i+1, s["symbol"], s["price"], s["change_pct"],
+                      s.get("high"), s.get("low"), s["volume"]], GRN_FILL)
+        ws2.cell(row=r, column=3).number_format = '#,##0.00'
+        ws2.cell(row=r, column=4).number_format = '+0.00;-0.00'
+        ws2.cell(row=r, column=5).number_format = '#,##0.00'
+        ws2.cell(row=r, column=6).number_format = '#,##0.00'
+        ws2.cell(row=r, column=7).number_format = '#,##0'
+    _widths(ws2, [4, 16, 13, 11, 13, 13, 14])
+
+    # ════════════════════════════════════════════════════════
+    # Sheet 3 — Top Losers
+    # ════════════════════════════════════════════════════════
+    ws3 = wb.create_sheet("Top Losers")
+    ws3.freeze_panes = "A3"
+    _info(ws3, 1, f"Top Losers by % Change   |   {stamp}")
+    _header(ws3, 2, ["#", "Symbol", "Price (₹)", "Change %", "High (₹)", "Low (₹)", "Volume"])
+    for i, s in enumerate(losers):
+        r = i + 3
+        _row(ws3, r, [i+1, s["symbol"], s["price"], s["change_pct"],
+                      s.get("high"), s.get("low"), s["volume"]], RED_FILL)
+        ws3.cell(row=r, column=3).number_format = '#,##0.00'
+        ws3.cell(row=r, column=4).number_format = '+0.00;-0.00'
+        ws3.cell(row=r, column=5).number_format = '#,##0.00'
+        ws3.cell(row=r, column=6).number_format = '#,##0.00'
+        ws3.cell(row=r, column=7).number_format = '#,##0'
+    _widths(ws3, [4, 16, 13, 11, 13, 13, 14])
+
+    # ════════════════════════════════════════════════════════
+    # Sheet 4 — Most Active
+    # ════════════════════════════════════════════════════════
+    ws4 = wb.create_sheet("Most Active")
+    ws4.freeze_panes = "A3"
+    _info(ws4, 1, f"Most Active by Volume   |   {stamp}")
+    _header(ws4, 2, ["#", "Symbol", "Price (₹)", "Change %", "Volume"])
+    for i, s in enumerate(active):
+        r    = i + 3
+        pct  = s.get("change_pct", 0) or 0
+        fill = GRN_FILL if pct >= 0 else RED_FILL
+        _row(ws4, r, [i+1, s["symbol"], s["price"], pct, s["volume"]], fill)
+        ws4.cell(row=r, column=3).number_format = '#,##0.00'
+        ws4.cell(row=r, column=4).number_format = '+0.00;-0.00'
+        ws4.cell(row=r, column=5).number_format = '#,##0'
+    _widths(ws4, [4, 16, 13, 11, 16])
+
+    # ════════════════════════════════════════════════════════
+    # Sheet 5 — Indices
+    # ════════════════════════════════════════════════════════
+    ws5 = wb.create_sheet("Indices")
+    ws5.freeze_panes = "A3"
+    _info(ws5, 1, f"Live Indices   |   {stamp}")
+    _header(ws5, 2, ["Index", "Price (₹)", "Change (₹)", "Change %", "High", "Low"])
+    for i, (name, d) in enumerate(indices.items()):
+        r    = i + 3
+        pct  = d.get("change_pct", 0) or 0
+        fill = GRN_FILL if pct >= 0 else RED_FILL
+        _row(ws5, r, [name, d.get("current_price"), d.get("change"), pct,
+                      d.get("high"), d.get("low")], fill)
+        for col in [2, 3, 5, 6]:
+            ws5.cell(row=r, column=col).number_format = '#,##0.00'
+        ws5.cell(row=r, column=4).number_format = '+0.00;-0.00'
+    _widths(ws5, [14, 14, 13, 12, 12, 12])
+
+    # ════════════════════════════════════════════════════════
+    # Sheet 6 — Watchlist
+    # ════════════════════════════════════════════════════════
+    ws6 = wb.create_sheet("Watchlist")
+    ws6.freeze_panes = "A3"
+    _info(ws6, 1, f"My Watchlist   |   {stamp}")
+    _header(ws6, 2, ["Symbol", "Price (₹)", "Change %"])
+    if watchl:
+        for i, s in enumerate(watchl):
+            r    = i + 3
+            pct  = s.get("change_pct", 0) or 0
+            fill = GRN_FILL if pct >= 0 else RED_FILL
+            _row(ws6, r, [s["symbol"], s.get("price"), pct], fill)
+            ws6.cell(row=r, column=2).number_format = '#,##0.00'
+            ws6.cell(row=r, column=3).number_format = '+0.00;-0.00'
+    else:
+        ws6.cell(row=3, column=1, value="Watchlist is empty").font = INFO_FONT
+    _widths(ws6, [18, 15, 13])
+
+    # ── Stream ────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"StockGPT_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# CSV export
+# ---------------------------------------------------------------------------
+
+@router.get("/export/csv", summary="Download all stocks as CSV")
+def export_csv():
+    """Plain CSV of all NSE F&O stocks — opens directly in Excel or Google Sheets."""
+    from app.services.market_data import get_market
+
+    market = get_market()
+    lines  = ["Symbol,LTP,PCR,Signal,Call OI,Put OI,Max Pain"]
+    for s in market:
+        lines.append(
+            f"{s['symbol']},{s['ltp']},{s['pcr']},{s['signal']},"
+            f"{s['call_oi']},{s['put_oi']},{s['max_pain']}"
+        )
+
+    filename = f"StockGPT_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return StreamingResponse(
+        io.StringIO("\n".join(lines)),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

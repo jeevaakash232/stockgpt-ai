@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: stockgpt-api
+    runtime: python
+    rootDir: .
+    buildCommand: pip install -r requirements_stockgpt.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: GROQ_API_KEY
+        sync: false          # set manually in Render dashboard
+      - key: MODEL_NAME
+        value: meta-llama/llama-4-scout-17b-16e-instruct
+      - key: ANGEL_API_KEY
+        sync: false
+      - key: ANGEL_CLIENT_ID
+        sync: false
+      - key: ANGEL_PASSWORD
+        sync: false
+      - key: ANGEL_TOTP_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false          # set to your Netlify URL after deploy
