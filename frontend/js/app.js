@@ -104,6 +104,9 @@ function _renderPCRTable(data, tbody) {
           ${esc(s.symbol)}
         </strong>
       </td>
+      <td class="text-end text-warning fw-semibold">
+        ₹${_fmtPrice(s.ltp)}
+      </td>
       <td class="text-end ${_deltaColour(s.price_chg_pct)}" title="Price % change since yesterday close">
         ${_fmtPct(s.price_chg_pct, 1)}
       </td>
@@ -124,6 +127,12 @@ function _renderPCRTable(data, tbody) {
       </td>
       <td class="text-end ${_deltaColour(s.pcr_change)}" title="PCR change since yesterday (Current - Previous)">
         ${_fmtDelta(s.pcr_change, 2, true)}
+      </td>
+      <td class="text-end ${_deltaColour(s.pcr_change_pct)}" title="% change in PCR since yesterday">
+        ${s.pcr_change_pct != null ? (s.pcr_change_pct > 0 ? '+' : '') + s.pcr_change_pct.toFixed(2) + '%' : '—'}
+      </td>
+      <td class="text-end text-muted small" title="Nearest contract expiry">
+        ${s.expiry ? s.expiry : '—'}
       </td>
       <td>
         <div class="d-flex gap-1">
@@ -191,8 +200,8 @@ function sortPCRTable(colIndex) {
   });
 
   const keys = [
-    "symbol", "price_chg_pct", "call_oi", "put_oi", "max_pain",
-    "pcr", "prev_day_pcr", "pcr_change"
+    "symbol", "ltp", "price_chg_pct", "call_oi", "put_oi", "max_pain",
+    "pcr", "prev_day_pcr", "pcr_change", "pcr_change_pct", "expiry"
   ];
   const key = keys[colIndex];
   if (!key) return;
@@ -202,6 +211,20 @@ function sortPCRTable(colIndex) {
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
+    
+    // Sort logic
+    if (key === "expiry") {
+      // Parse dates for sorting, e.g. "30-Jul-2026"
+      const _parseExp = dStr => {
+        if (!dStr) return 0;
+        const pts = dStr.split('-');
+        if (pts.length !== 3) return 0;
+        const months = {"Jan":0,"Feb":1,"Mar":2,"Apr":3,"May":4,"Jun":5,"Jul":6,"Aug":7,"Sep":8,"Oct":9,"Nov":10,"Dec":11};
+        return new Date(pts[2], months[pts[1]], pts[0]).getTime();
+      };
+      return _pcrSortAsc ? _parseExp(av) - _parseExp(bv) : _parseExp(bv) - _parseExp(av);
+    }
+    
     const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
     return _pcrSortAsc ? cmp : -cmp;
   });

@@ -203,12 +203,14 @@ function renderIndices(indices) {
 // ---------------------------------------------------------------------------
 
 function renderMarketOverview(ov) {
-  flashUpdate(byId("cardLTP"),       fmtINR(ov.nifty_ltp),    "cardLTP");
-  flashUpdate(byId("cardPCR"),       ov.pcr ?? "—",            "cardPCR");
-  flashUpdate(byId("cardMaxPain"),   fmtINR(ov.max_pain),      "cardMaxPain");
-  flashUpdate(byId("cardSentiment"), ov.signal ?? "—",         "cardSentiment");
-  flashUpdate(byId("cardCallOI"),    fmtCr(ov.total_call_oi),  "cardCallOI");
-  flashUpdate(byId("cardPutOI"),     fmtCr(ov.total_put_oi),   "cardPutOI");
+  flashUpdate(byId("cardLTP"),               fmtINR(ov.nifty_ltp),          "cardLTP");
+  flashUpdate(byId("cardPCR"),               ov.pcr ?? "—",                  "cardPCR");
+  flashUpdate(byId("cardMaxPain"),           fmtINR(ov.max_pain),            "cardMaxPain");
+  flashUpdate(byId("cardSentiment"),         ov.signal ?? "—",               "cardSentiment");
+  flashUpdate(byId("cardCallOI"),            fmtCr(ov.total_call_oi),        "cardCallOI");
+  flashUpdate(byId("cardPutOI"),             fmtCr(ov.total_put_oi),         "cardPutOI");
+  flashUpdate(byId("cardMeanPCRToday"),      ov.mean_pcr_today ?? "—",       "cardMeanPCRToday");
+  flashUpdate(byId("cardMeanPCRYesterday"),  ov.mean_pcr_yesterday ?? "—",   "cardMeanPCRYesterday");
 
   const sent = byId("cardSentiment");
   if (sent) sent.className = "summary-value " + signalClass(ov.signal);

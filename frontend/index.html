@@ -97,40 +97,52 @@
       </div>
 
       <div class="row g-3 mb-4">
-        <div class="col-6 col-md-4 col-lg-2">
+        <div class="col-6 col-md-3 col-lg-3">
           <div class="summary-card">
             <div class="summary-label">NIFTY LTP</div>
             <div class="summary-value text-white" id="cardLTP">—</div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-lg-2">
+        <div class="col-6 col-md-3 col-lg-3">
           <div class="summary-card">
-            <div class="summary-label">PCR</div>
+            <div class="summary-label">NIFTY PCR</div>
             <div class="summary-value" id="cardPCR">—</div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-lg-2">
+        <div class="col-6 col-md-3 col-lg-3">
           <div class="summary-card">
-            <div class="summary-label">Max Pain</div>
+            <div class="summary-label">NIFTY Max Pain</div>
             <div class="summary-value" id="cardMaxPain">—</div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-lg-2">
+        <div class="col-6 col-md-3 col-lg-3">
           <div class="summary-card">
-            <div class="summary-label">Sentiment</div>
+            <div class="summary-label">NIFTY Sentiment</div>
             <div class="summary-value" id="cardSentiment">—</div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-lg-2">
+        <div class="col-6 col-md-3 col-lg-3">
           <div class="summary-card">
-            <div class="summary-label">Call OI</div>
+            <div class="summary-label">Market Call OI</div>
             <div class="summary-value" id="cardCallOI">—</div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-lg-2">
+        <div class="col-6 col-md-3 col-lg-3">
           <div class="summary-card">
-            <div class="summary-label">Put OI</div>
+            <div class="summary-label">Market Put OI</div>
             <div class="summary-value" id="cardPutOI">—</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3 col-lg-3">
+          <div class="summary-card">
+            <div class="summary-label">Market Mean PCR (Today)</div>
+            <div class="summary-value text-warning" id="cardMeanPCRToday">—</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3 col-lg-3">
+          <div class="summary-card">
+            <div class="summary-label">Market Mean PCR (Yesterday)</div>
+            <div class="summary-value text-muted" id="cardMeanPCRYesterday">—</div>
           </div>
         </div>
       </div>
@@ -301,14 +313,17 @@
             <thead>
               <tr>
                 <th class="sortable" onclick="sortPCRTable(0)" data-tip="Stock symbol">Symbol</th>
-                <th class="sortable" onclick="sortPCRTable(1)" data-tip="Price change in % since yesterday close">Price chg in %</th>
-                <th class="sortable" onclick="sortPCRTable(2)" data-tip="Total Call Open Interest">Call OI</th>
-                <th class="sortable" onclick="sortPCRTable(3)" data-tip="Total Put Open Interest">Put OI</th>
-                <th class="sortable" onclick="sortPCRTable(4)" data-tip="Max Pain strike price">Max Pain</th>
-                <th class="sortable" onclick="sortPCRTable(5)" data-tip="Current day Put-Call Ratio">Current day PCR</th>
-                <th class="sortable" onclick="sortPCRTable(6)" data-tip="Previous day closing PCR">Previous day PCR</th>
-                <th class="sortable" onclick="sortPCRTable(7)" data-tip="Δ PCR = Current day PCR - Previous day PCR">Δ PCR</th>
-                <th data-tip="Open stock detail and option chain">Detail</th>
+                <th class="sortable" onclick="sortPCRTable(1)" data-tip="Last Traded Price">Price</th>
+                <th class="sortable" onclick="sortPCRTable(2)" data-tip="Price change in % since yesterday close">Price change %</th>
+                <th class="sortable" onclick="sortPCRTable(3)" data-tip="Total Call Open Interest">Call OI</th>
+                <th class="sortable" onclick="sortPCRTable(4)" data-tip="Total Put Open Interest">Put OI</th>
+                <th class="sortable" onclick="sortPCRTable(5)" data-tip="Max Pain strike price">Max Pain</th>
+                <th class="sortable" onclick="sortPCRTable(6)" data-tip="Current day Put-Call Ratio">Current day PCR</th>
+                <th class="sortable" onclick="sortPCRTable(7)" data-tip="Previous day closing PCR">Previous day PCR</th>
+                <th class="sortable" onclick="sortPCRTable(8)" data-tip="Δ PCR = Current day PCR - Previous day PCR">Δ PCR</th>
+                <th class="sortable" onclick="sortPCRTable(9)" data-tip="% Change in PCR = ((Current - Previous) / Previous) * 100">% change in PCR</th>
+                <th class="sortable" onclick="sortPCRTable(10)" data-tip="Nearest contract expiry date">Expiry Date</th>
+                <th data-tip="Open stock detail and option chain">Actions</th>
               </tr>
             </thead>
             <tbody id="pcrFullBody">
@@ -477,6 +492,7 @@
 ════════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/api.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/search.js"></script>

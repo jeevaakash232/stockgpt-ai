@@ -49,16 +49,37 @@ def _build_dashboard() -> dict:
     total_call = sum(s["call_oi"] for s in pcr_data)
     total_put  = sum(s["put_oi"]  for s in pcr_data)
 
+    # Today's Mean PCR of all stocks in the market
+    pcr_vals_today = [s["pcr"] for s in pcr_data if s.get("pcr") is not None]
+    mean_pcr_today = round(sum(pcr_vals_today) / len(pcr_vals_today), 2) if pcr_vals_today else None
+
+    # Yesterday's Mean PCR from SQLite EOD snapshot data
+    from app.services.history_service import get_previous_day_snapshot
+    prev_day_snapshot = cache_service.get_or_fetch(
+        "prev_day_snapshot",
+        get_previous_day_snapshot,
+        ttl=3600
+    ) or {}
+
+    pcr_vals_yesterday = [
+        snap["pcr"]
+        for snap in prev_day_snapshot.values()
+        if snap.get("pcr") is not None
+    ]
+    mean_pcr_yesterday = round(sum(pcr_vals_yesterday) / len(pcr_vals_yesterday), 2) if pcr_vals_yesterday else None
+
     nifty_idx = indices.get("NIFTY", {})
     market_overview = {
-        "nifty_ltp":     nifty_idx.get("current_price"),
-        "nifty_change":  nifty_idx.get("change"),
-        "nifty_pct":     nifty_idx.get("change_pct"),
-        "pcr":           nifty_pcr.get("pcr"),
-        "signal":        nifty_pcr.get("signal"),
-        "max_pain":      nifty_pcr.get("max_pain"),
-        "total_call_oi": total_call,
-        "total_put_oi":  total_put,
+        "nifty_ltp":          nifty_idx.get("current_price"),
+        "nifty_change":       nifty_idx.get("change"),
+        "nifty_pct":          nifty_idx.get("change_pct"),
+        "pcr":                nifty_pcr.get("pcr"),
+        "signal":             nifty_pcr.get("signal"),
+        "max_pain":           nifty_pcr.get("max_pain"),
+        "total_call_oi":      total_call,
+        "total_put_oi":       total_put,
+        "mean_pcr_today":     mean_pcr_today,
+        "mean_pcr_yesterday": mean_pcr_yesterday,
     }
 
     return {

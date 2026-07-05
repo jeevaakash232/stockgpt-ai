@@ -266,6 +266,18 @@ def _get_nearest_expiries(symbol: str) -> list[str]:
     return sorted(expiries, key=_sort_key)[:5]
 
 
+def get_nearest_expiry(symbol: str) -> Optional[str]:
+    """Return the nearest contract expiry date formatted as 'DD-MMM-YYYY' (e.g. '30-Jul-2026')."""
+    try:
+        expiries = _get_nearest_expiries(symbol)
+        if expiries:
+            dt = datetime.strptime(expiries[0], "%d%b%Y")
+            return dt.strftime("%d-%b-%Y")
+    except Exception:
+        pass
+    return None
+
+
 # Pre-built index: (symbol, expiry, CE/PE) -> list of {token, strike}
 _instrument_index: dict = {}
 _instrument_index_lock = threading.Lock()

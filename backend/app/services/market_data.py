@@ -154,6 +154,15 @@ def _build_market() -> list[dict]:
         if yesterday_close and yesterday_close > 0 and ltp > 0:
             price_chg_pct = round(((ltp - yesterday_close) / yesterday_close) * 100, 1)
 
+        # % change in PCR (Current day PCR - Previous day PCR) / Previous day PCR * 100
+        pcr_change_pct = None
+        if prev_day_pcr and prev_day_pcr > 0:
+            pcr_change_pct = round(((pcr - prev_day_pcr) / prev_day_pcr) * 100, 2)
+
+        # Get expiry date dynamically from instrument master cache
+        from app.services.angel_service import get_nearest_expiry
+        expiry = get_nearest_expiry(sym)
+
         result.append({
             "symbol":          sym,
             "ltp":             ltp,
@@ -168,6 +177,8 @@ def _build_market() -> list[dict]:
             "prev_put_oi":     prev_put_oi,
             "prev_ltp":        prev_ltp,
             "pcr_change":      pcr_change,
+            "pcr_change_pct":  pcr_change_pct,
+            "expiry":          expiry,
             "call_oi_chg_pct": call_oi_chg_pct,
             "put_oi_chg_pct":  put_oi_chg_pct,
             "price_chg_pct":   price_chg_pct,
