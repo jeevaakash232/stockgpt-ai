@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+env/
+.venv/
+
+# Environment — NEVER commit secrets
+.env
+*.env
+
+# Database
+*.db
+*.sqlite3
+
+# Angel One disk cache (re-downloaded on startup)
+backend/data/instrument_master.json
+backend/data/instrument_master_date.txt
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
