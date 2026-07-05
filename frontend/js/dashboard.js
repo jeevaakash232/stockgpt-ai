@@ -40,10 +40,20 @@ async function loadDashboard() {
     if (typeof updateLastRefresh === "function") updateLastRefresh();
   } catch (err) {
     console.error("Dashboard load failed:", err);
+    // Show "waking up" if it's a network error (Render free tier sleep)
+    const isWaking = err.message.includes("Failed to fetch") ||
+                     err.message.includes("NetworkError") ||
+                     err.message.includes("502") ||
+                     err.message.includes("503");
     showBanner("offlineBanner",
-      `<i class="bi bi-exclamation-triangle-fill me-2"></i>
-       <strong>Backend offline.</strong> Run <code>python run.py</code> in <code>backend/</code>`
+      isWaking
+        ? `<span class="spinner-border spinner-border-sm me-2"></span>
+           <strong>Waking up the server…</strong> Render free tier sleeps after 15 min of inactivity.
+           This takes up to 60 seconds. <span id="wakeCountdown"></span>`
+        : `<i class="bi bi-exclamation-triangle-fill me-2"></i>
+           <strong>Backend offline.</strong> Run <code>python run.py</code> in <code>backend/</code>`
     );
+    if (isWaking) startWakeCountdown();
   }
 }
 
@@ -338,13 +348,43 @@ function hideBanner(id) {
 }
 
 function showBanner(id, html) {
-  if (byId(id)) return;
+  if (byId(id)) { byId(id).innerHTML = html; return; }
   const el = document.createElement("div");
   el.id        = id;
-  el.className = "alert alert-danger d-flex align-items-center gap-2 mb-4";
+  el.className = "alert alert-warning d-flex align-items-center gap-2 mb-4";
   el.innerHTML = html;
   const main   = document.querySelector(".main-content");
   if (main) main.prepend(el);
+}
+
+// Wake-up countdown — retries every 8 seconds
+let _wakeTimer = null;
+let _wakeSeconds = 0;
+
+function startWakeCountdown() {
+  clearInterval(_wakeTimer);
+  _wakeSeconds = 0;
+  _wakeTimer = setInterval(() => {
+    _wakeSeconds += 8;
+    const el = document.getElementById("wakeCountdown");
+    if (el) el.textContent = `(${_wakeSeconds}s elapsed)`;
+
+    // Try again every 8 seconds
+    fetch(`${API_BASE}/`)
+      .then(r => { if (r.ok) { clearInterval(_wakeTimer); loadDashboard(); } })
+      .catch(() => {});
+
+    // Give up after 90 seconds
+    if (_wakeSeconds >= 90) {
+      clearInterval(_wakeTimer);
+      showBanner("offlineBanner",
+        `<i class="bi bi-exclamation-triangle-fill me-2"></i>
+         <strong>Server unreachable.</strong>
+         Backend at <code>${API_BASE.replace("/api","")}</code> is not responding.
+         <a href="${API_BASE.replace("/api","")}/docs" target="_blank" class="ms-2">Check status</a>`
+      );
+    }
+  }, 8000);
 }
 
 function showToast(message, type = "info") {

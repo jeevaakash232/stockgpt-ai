@@ -4,8 +4,24 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   showTab("dashboard", document.querySelector(".sidebar-link.active"));
+  startKeepAlive();
   console.log("StockGPT AI v2.0 ready.");
 });
+
+// ---------------------------------------------------------------------------
+// Keep-alive — ping backend every 10 min to prevent Render free tier sleep
+// ---------------------------------------------------------------------------
+function startKeepAlive() {
+  // Only runs when deployed (not localhost)
+  if (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1") return;
+
+  setInterval(() => {
+    fetch(`${API_BASE}/`)
+      .then(() => console.log("Keep-alive ping OK"))
+      .catch(() => {});
+  }, 10 * 60 * 1000);  // every 10 minutes
+}
 
 
 // ---------------------------------------------------------------------------
