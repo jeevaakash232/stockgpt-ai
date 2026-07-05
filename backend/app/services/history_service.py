@@ -279,6 +279,54 @@ def get_all_symbols_history(trade_date: str = None) -> list[dict]:
         return []
 
 
+def get_previous_day_snapshot() -> dict:
+    """
+    Return a map of symbol -> snapshot_dict for the most recent trading date before today.
+    """
+    try:
+        now_ist = datetime.now(IST)
+        today_str = now_ist.strftime("%Y-%m-%d")
+
+        with _conn() as c:
+            # Find the most recent date strictly before today
+            row = c.execute(
+                "SELECT MAX(trade_date) as dt FROM daily_snapshot WHERE trade_date < ?",
+                (today_str,)
+            ).fetchone()
+
+            if not row or not row["dt"]:
+                # If no date before today, fallback to the latest date overall
+                row = c.execute(
+                    "SELECT MAX(trade_date) as dt FROM daily_snapshot"
+                ).fetchone()
+
+            if not row or not row["dt"]:
+                return {}
+
+            prev_date = row["dt"]
+
+            # Fetch snapshots for that date
+            rows = c.execute(
+                "SELECT symbol, ltp, call_oi, put_oi, pcr, signal, max_pain, prev_close FROM daily_snapshot WHERE trade_date = ?",
+                (prev_date,)
+            ).fetchall()
+
+            return {
+                r["symbol"]: {
+                    "pcr": r["pcr"],
+                    "call_oi": r["call_oi"],
+                    "put_oi": r["put_oi"],
+                    "ltp": r["ltp"],
+                    "prev_close": r["prev_close"],
+                    "max_pain": r["max_pain"]
+                }
+                for r in rows
+            }
+    except Exception as exc:
+        logger.error("get_previous_day_snapshot failed: %s", exc)
+        return {}
+
+
 def get_available_dates() -> list[str]:
     """Return all dates for which we have daily snapshots, newest first."""
     try:

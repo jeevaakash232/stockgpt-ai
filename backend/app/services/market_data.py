@@ -86,7 +86,16 @@ def get_market() -> list[dict]:
 
 
 def _build_market() -> list[dict]:
-    # Load previous snapshot from cache (survives refreshes, resets on restart)
+    # Load previous day's snapshot from SQLite (or cache)
+    from app.services.history_service import get_previous_day_snapshot
+
+    prev_day_snapshot = cache_service.get_or_fetch(
+        "prev_day_snapshot",
+        get_previous_day_snapshot,
+        ttl=3600  # cache for 1 hour to avoid excessive DB reads
+    ) or {}
+
+    # Load previous snapshot from cache (survives refreshes, resets on restart) for tick fallback
     prev_snapshot = cache_service.get(_PREV_SNAPSHOT_KEY) or {}
 
     live_ltps = _get_all_ltps_batch()
@@ -101,33 +110,49 @@ def _build_market() -> list[dict]:
         max_pain = oi["max_pain"]
         pcr      = calculate_pcr(call_oi, put_oi)
 
-        # Retrieve previous values from snapshot
+        # Retrieve previous values from snapshots
         prev = prev_snapshot.get(sym)
 
+        # In-memory tick-to-tick values
         prev_pcr     = prev["pcr"]     if prev else None
         prev_call_oi = prev["call_oi"] if prev else None
         prev_put_oi  = prev["put_oi"]  if prev else None
         prev_ltp     = prev["ltp"]     if prev else None
 
-        # Δ PCR
+        # Previous day's EOD values (fallback to tick if DB has no historical data yet)
+        prev_day_pcr = None
+        if sym in prev_day_snapshot:
+            prev_day_pcr = prev_day_snapshot[sym].get("pcr")
+        elif prev_pcr is not None:
+            prev_day_pcr = prev_pcr
+
+        yesterday_close = None
+        if sym in prev_day_snapshot:
+            yesterday_close = prev_day_snapshot[sym].get("ltp")
+        elif prev_ltp is not None:
+            yesterday_close = prev_ltp
+
+        # Δ PCR (Current Day PCR - Previous Day PCR)
         pcr_change = None
-        if prev_pcr is not None:
-            pcr_change = round(pcr - prev_pcr, 2)
+        if prev_day_pcr is not None:
+            pcr_change = round(pcr - prev_day_pcr, 2)
 
-        # Call OI Change %
+        # Call OI Change % (using last tick, or fallback to EOD)
         call_oi_chg_pct = None
-        if prev_call_oi and prev_call_oi != 0:
-            call_oi_chg_pct = round(((call_oi - prev_call_oi) / prev_call_oi) * 100)
+        ref_call_oi = prev_call_oi if prev_call_oi else (prev_day_snapshot.get(sym, {}).get("call_oi") if sym in prev_day_snapshot else None)
+        if ref_call_oi and ref_call_oi != 0:
+            call_oi_chg_pct = round(((call_oi - ref_call_oi) / ref_call_oi) * 100)
 
-        # Put OI Change %
+        # Put OI Change % (using last tick, or fallback to EOD)
         put_oi_chg_pct = None
-        if prev_put_oi and prev_put_oi != 0:
-            put_oi_chg_pct = round(((put_oi - prev_put_oi) / prev_put_oi) * 100)
+        ref_put_oi = prev_put_oi if prev_put_oi else (prev_day_snapshot.get(sym, {}).get("put_oi") if sym in prev_day_snapshot else None)
+        if ref_put_oi and ref_put_oi != 0:
+            put_oi_chg_pct = round(((put_oi - ref_put_oi) / ref_put_oi) * 100)
 
-        # Price Change %
+        # Price Change % since yesterday's close (or fallback to last tick)
         price_chg_pct = None
-        if prev_ltp and prev_ltp > 0 and ltp > 0:
-            price_chg_pct = round(((ltp - prev_ltp) / prev_ltp) * 100, 1)
+        if yesterday_close and yesterday_close > 0 and ltp > 0:
+            price_chg_pct = round(((ltp - yesterday_close) / yesterday_close) * 100, 1)
 
         result.append({
             "symbol":          sym,
@@ -137,6 +162,7 @@ def _build_market() -> list[dict]:
             "max_pain":        max_pain,
             "pcr":             pcr,
             "signal":          signal(pcr),
+            "prev_day_pcr":    prev_day_pcr,
             "prev_pcr":        prev_pcr,
             "prev_call_oi":    prev_call_oi,
             "prev_put_oi":     prev_put_oi,

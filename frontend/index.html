@@ -301,16 +301,13 @@
             <thead>
               <tr>
                 <th class="sortable" onclick="sortPCRTable(0)" data-tip="Stock symbol">Symbol</th>
-                <th class="sortable" onclick="sortPCRTable(1)" data-tip="Last Traded Price">LTP ₹</th>
-                <th class="sortable" onclick="sortPCRTable(2)" data-tip="Put-Call Ratio = Put OI / Call OI">PCR</th>
-                <th class="sortable" onclick="sortPCRTable(3)" data-tip="Change in PCR since last refresh">Δ PCR</th>
-                <th class="sortable" onclick="sortPCRTable(4)" data-tip="Total Call Open Interest">Call OI</th>
-                <th class="sortable" onclick="sortPCRTable(5)" data-tip="Total Put Open Interest">Put OI</th>
-                <th class="sortable" onclick="sortPCRTable(6)" data-tip="% change in Call OI since last refresh">Call OI Δ%</th>
-                <th class="sortable" onclick="sortPCRTable(7)" data-tip="% change in Put OI since last refresh">Put OI Δ%</th>
-                <th class="sortable" onclick="sortPCRTable(8)" data-tip="% change in price since last refresh">Price Δ%</th>
-                <th class="sortable" onclick="sortPCRTable(9)" data-tip="Market sentiment based on PCR">Signal</th>
-                <th class="sortable" onclick="sortPCRTable(10)" data-tip="Max Pain strike price">Max Pain</th>
+                <th class="sortable" onclick="sortPCRTable(1)" data-tip="Price change in % since yesterday close">Price chg in %</th>
+                <th class="sortable" onclick="sortPCRTable(2)" data-tip="Total Call Open Interest">Call OI</th>
+                <th class="sortable" onclick="sortPCRTable(3)" data-tip="Total Put Open Interest">Put OI</th>
+                <th class="sortable" onclick="sortPCRTable(4)" data-tip="Max Pain strike price">Max Pain</th>
+                <th class="sortable" onclick="sortPCRTable(5)" data-tip="Current day Put-Call Ratio">Current day PCR</th>
+                <th class="sortable" onclick="sortPCRTable(6)" data-tip="Previous day closing PCR">Previous day PCR</th>
+                <th class="sortable" onclick="sortPCRTable(7)" data-tip="Δ PCR = Current day PCR - Previous day PCR">Δ PCR</th>
                 <th data-tip="Open stock detail and option chain">Detail</th>
               </tr>
             </thead>

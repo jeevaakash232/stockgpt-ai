@@ -104,14 +104,8 @@ function _renderPCRTable(data, tbody) {
           ${esc(s.symbol)}
         </strong>
       </td>
-      <td class="text-warning fw-semibold text-end">
-        ₹${_fmtPrice(s.ltp)}
-      </td>
-      <td class="text-end fw-semibold ${_pcrColour(s.pcr)}" title="PCR = Put OI / Call OI">
-        ${s.pcr != null ? s.pcr : '—'}
-      </td>
-      <td class="text-end ${_deltaColour(s.pcr_change)}" title="PCR change since last refresh">
-        ${_fmtDelta(s.pcr_change, 2, true)}
+      <td class="text-end ${_deltaColour(s.price_chg_pct)}" title="Price % change since yesterday close">
+        ${_fmtPct(s.price_chg_pct, 1)}
       </td>
       <td class="text-end" title="Total Call Open Interest">
         ${fmtOI(s.call_oi)}
@@ -119,20 +113,17 @@ function _renderPCRTable(data, tbody) {
       <td class="text-end" title="Total Put Open Interest">
         ${fmtOI(s.put_oi)}
       </td>
-      <td class="text-end ${_deltaColour(s.call_oi_chg_pct)}" title="Call OI % change since last refresh">
-        ${_fmtPct(s.call_oi_chg_pct)}
-      </td>
-      <td class="text-end ${_deltaColour(s.put_oi_chg_pct)}" title="Put OI % change since last refresh">
-        ${_fmtPct(s.put_oi_chg_pct)}
-      </td>
-      <td class="text-end ${_deltaColour(s.price_chg_pct)}" title="Price % change since last refresh">
-        ${_fmtPct(s.price_chg_pct, 1)}
-      </td>
-      <td class="${signalClass(s.signal)} fw-semibold" title="Market sentiment">
-        ${esc(s.signal)}
-      </td>
       <td class="text-end" title="Max Pain strike price">
         ${s.max_pain ? '₹' + Number(s.max_pain).toLocaleString("en-IN") : '—'}
+      </td>
+      <td class="text-end fw-semibold ${_pcrColour(s.pcr)}" title="Current day PCR = Put OI / Call OI">
+        ${s.pcr != null ? s.pcr : '—'}
+      </td>
+      <td class="text-end fw-semibold ${_pcrColour(s.prev_day_pcr)}" title="Previous day closing PCR">
+        ${s.prev_day_pcr != null ? s.prev_day_pcr : '—'}
+      </td>
+      <td class="text-end ${_deltaColour(s.pcr_change)}" title="PCR change since yesterday (Current - Previous)">
+        ${_fmtDelta(s.pcr_change, 2, true)}
       </td>
       <td>
         <div class="d-flex gap-1">
@@ -200,9 +191,8 @@ function sortPCRTable(colIndex) {
   });
 
   const keys = [
-    "symbol", "ltp", "pcr", "pcr_change",
-    "call_oi", "put_oi", "call_oi_chg_pct", "put_oi_chg_pct",
-    "price_chg_pct", "signal", "max_pain"
+    "symbol", "price_chg_pct", "call_oi", "put_oi", "max_pain",
+    "pcr", "prev_day_pcr", "pcr_change"
   ];
   const key = keys[colIndex];
   if (!key) return;
