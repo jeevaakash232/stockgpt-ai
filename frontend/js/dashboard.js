@@ -49,7 +49,8 @@ function scheduleNextRefresh() {
   const interval = getRefreshInterval();
   _refreshTimer = setTimeout(() => {
     loadDashboard();
-    scheduleNextRefresh();   // reschedule after each load
+    refreshPCRIfVisible();   // also refresh PCR table if that tab is open
+    scheduleNextRefresh();
   }, interval);
 }
 

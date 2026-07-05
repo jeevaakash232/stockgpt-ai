@@ -384,3 +384,45 @@ body {
 
 #optionChainTable td, #optionChainTable th { padding: 4px 8px; border-color: var(--border); vertical-align: middle; }
 #optionChainTable .sticky-top { position: sticky; top: 0; z-index: 1; background: var(--bg3); }
+
+
+/* ============================================================
+   PCR Table — Enhanced Option Chain
+   ============================================================ */
+
+/* Sortable column headers */
+#pcrFullTable th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+}
+#pcrFullTable th.sortable:hover { color: var(--text); }
+#pcrFullTable th.sortable::after {
+  content: " ⇅";
+  font-size: 0.65rem;
+  color: var(--muted);
+  opacity: 0.6;
+}
+#pcrFullTable th.sort-asc::after  { content: " ▲"; color: var(--accent); opacity: 1; }
+#pcrFullTable th.sort-desc::after { content: " ▼"; color: var(--accent); opacity: 1; }
+
+/* Column alignment */
+#pcrFullTable td { white-space: nowrap; font-size: 0.83rem; }
+#pcrFullTable th { font-size: 0.76rem; }
+
+/* Delta pill badges */
+.delta-up   { color: #2ea043; font-weight: 600; }
+.delta-down { color: #f85149; font-weight: 600; }
+.delta-nil  { color: var(--muted); }
+
+/* Row hover highlight */
+#pcrFullTable tbody tr:hover td { background: rgba(255,193,7,.05) !important; }
+
+/* Sticky header on scroll */
+#pcrFullTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1a1f2e;
+}

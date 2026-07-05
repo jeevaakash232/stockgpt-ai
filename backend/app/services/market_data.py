@@ -3,9 +3,11 @@ Market Data Service
 -------------------
 Provides live LTP for ALL NSE F&O equity symbols (~210 stocks) + indices.
 Live prices fetched from Angel One in batches of 50 tokens per call.
-OI/PCR data is available on demand via /api/option-chain/{symbol}.
 
-To add more symbols: they are auto-loaded from CASH_TOKENS in angel_service.py.
+Change tracking:
+  - Previous snapshot is saved each refresh cycle (in-memory)
+  - Δ PCR, Call OI Change %, Put OI Change %, Price Change % are computed
+    from the difference between the current and previous snapshot
 """
 
 from app.services.pcr_service import calculate_pcr, signal
@@ -14,8 +16,14 @@ from app.services import cache_service
 CACHE_TTL = 60  # fallback default
 
 # ---------------------------------------------------------------------------
-# Default OI values for PCR table (used when live OI is not yet fetched).
-# Live OI is fetched on-demand via /api/option-chain/{symbol}.
+# Previous snapshot store — keyed by symbol
+# Holds values from the last completed refresh so we can compute deltas
+# ---------------------------------------------------------------------------
+_prev_snapshot: dict[str, dict] = {}   # symbol -> {pcr, call_oi, put_oi, ltp}
+
+
+# ---------------------------------------------------------------------------
+# Default OI values (fallback estimates when live OI not fetched)
 # ---------------------------------------------------------------------------
 DEFAULT_OI = {
     "NIFTY":      {"call_oi": 5_500_000, "put_oi": 6_200_000, "max_pain": 24000},
@@ -44,17 +52,15 @@ _DEFAULT_OI_FALLBACK = {"call_oi": 100_000, "put_oi": 100_000, "max_pain": 0}
 
 
 def get_all_symbols() -> list[str]:
-    """Return all tracked NSE F&O symbols sorted alphabetically."""
+    """Return all tracked NSE F&O symbols."""
     from app.services.angel_service import CASH_TOKENS
-    # Exclude index tokens from the equity list
-    indices = {"NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"}
+    indices  = {"NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"}
     equities = sorted(s for s in CASH_TOKENS if s not in indices)
-    # Indices first, then equities
     return ["NIFTY", "BANKNIFTY", "FINNIFTY"] + equities
 
 
 def get_sample_data() -> list[dict]:
-    """Return fallback stock records (used by pcr API when live data unavailable)."""
+    """Fallback records for pcr API."""
     from app.services.angel_service import CASH_TOKENS
     result = []
     for sym in get_all_symbols():
@@ -73,8 +79,8 @@ def get_sample_data() -> list[dict]:
 
 def get_market() -> list[dict]:
     """
-    Return ALL NSE F&O stocks with live LTP from Angel One.
-    Cache TTL: 15s during market hours, 60s outside.
+    Return ALL NSE F&O stocks with live LTP, PCR and change metrics.
+    Cache TTL: 15s market hours, 60s outside.
     """
     return cache_service.get_or_fetch(
         "market_data",
@@ -84,45 +90,99 @@ def get_market() -> list[dict]:
 
 
 def _build_market() -> list[dict]:
-    # Fetch all live LTPs in batches
-    live_ltps = _get_all_ltps_batch()
+    global _prev_snapshot
 
-    result = []
+    live_ltps = _get_all_ltps_batch()
+    result    = []
+
     for sym in get_all_symbols():
         ltp = live_ltps.get(sym, 0.0)
         oi  = DEFAULT_OI.get(sym, _DEFAULT_OI_FALLBACK)
 
-        pcr_value = calculate_pcr(oi["call_oi"], oi["put_oi"])
-        result.append({
-            "symbol":   sym,
-            "call_oi":  oi["call_oi"],
-            "put_oi":   oi["put_oi"],
-            "ltp":      ltp,
-            "max_pain": oi["max_pain"],
-            "pcr":      pcr_value,
-            "signal":   signal(pcr_value),
-        })
+        call_oi  = oi["call_oi"]
+        put_oi   = oi["put_oi"]
+        max_pain = oi["max_pain"]
+        pcr      = calculate_pcr(call_oi, put_oi)
+
+        # ── Compute deltas from previous snapshot ──────────
+        prev = _prev_snapshot.get(sym)
+
+        prev_pcr      = prev["pcr"]      if prev else None
+        prev_call_oi  = prev["call_oi"]  if prev else None
+        prev_put_oi   = prev["put_oi"]   if prev else None
+        prev_ltp      = prev["ltp"]      if prev else None
+
+        # Δ PCR
+        pcr_change = None
+        if prev_pcr is not None and prev_pcr != 0:
+            pcr_change = round(pcr - prev_pcr, 2)
+
+        # Call OI Change %
+        call_oi_chg_pct = None
+        if prev_call_oi is not None and prev_call_oi != 0:
+            call_oi_chg_pct = round(((call_oi - prev_call_oi) / prev_call_oi) * 100)
+
+        # Put OI Change %
+        put_oi_chg_pct = None
+        if prev_put_oi is not None and prev_put_oi != 0:
+            put_oi_chg_pct = round(((put_oi - prev_put_oi) / prev_put_oi) * 100)
+
+        # Price Change %
+        price_chg_pct = None
+        if prev_ltp is not None and prev_ltp > 0 and ltp > 0:
+            price_chg_pct = round(((ltp - prev_ltp) / prev_ltp) * 100, 1)
+
+        row = {
+            "symbol":           sym,
+            "ltp":              ltp,
+            "call_oi":          call_oi,
+            "put_oi":           put_oi,
+            "max_pain":         max_pain,
+            "pcr":              pcr,
+            "signal":           signal(pcr),
+            # Previous values (for reference)
+            "prev_pcr":         prev_pcr,
+            "prev_call_oi":     prev_call_oi,
+            "prev_put_oi":      prev_put_oi,
+            "prev_ltp":         prev_ltp,
+            # Delta metrics
+            "pcr_change":       pcr_change,
+            "call_oi_chg_pct":  call_oi_chg_pct,
+            "put_oi_chg_pct":   put_oi_chg_pct,
+            "price_chg_pct":    price_chg_pct,
+        }
+        result.append(row)
+
+    # Save current as next snapshot
+    _prev_snapshot = {
+        row["symbol"]: {
+            "pcr":     row["pcr"],
+            "call_oi": row["call_oi"],
+            "put_oi":  row["put_oi"],
+            "ltp":     row["ltp"],
+        }
+        for row in result
+        if row["ltp"] > 0   # only save valid prices
+    }
+
     return result
 
 
 def _get_all_ltps_batch() -> dict:
     """
-    Fetch live LTP for ALL tracked symbols using Angel One batch API.
-    Angel One allows 50 tokens per call — we make multiple calls as needed.
+    Fetch live LTP for ALL tracked symbols in Angel One batch calls.
     Returns dict: symbol -> ltp
     """
     from app.services.angel_service import CASH_TOKENS, _get_session
     import time
 
-    # Build token -> symbol reverse map
     token_to_sym = {v: k for k, v in CASH_TOKENS.items()}
     all_tokens   = list(CASH_TOKENS.values())
     ltps         = {}
-    BATCH        = 50  # Angel One free tier limit
+    BATCH        = 50
 
     try:
         smart = _get_session()
-
         for i in range(0, len(all_tokens), BATCH):
             batch = all_tokens[i : i + BATCH]
             try:
@@ -137,12 +197,11 @@ def _get_all_ltps_batch() -> dict:
             except Exception:
                 pass
             if i + BATCH < len(all_tokens):
-                time.sleep(0.1)   # small pause between batches
-
+                time.sleep(0.1)
     except Exception:
         pass
 
-    # Fallback: use Yahoo Finance movers cache for at least the popular symbols
+    # Fallback: Yahoo Finance movers cache
     if len(ltps) < 10:
         try:
             movers = cache_service.get("top_movers")

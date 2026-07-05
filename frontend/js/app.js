@@ -44,8 +44,7 @@ function showTab(tabName, linkEl) {
 
   // Lazy-load data for tabs that need it
   if (tabName === "pcr") loadPCRFullTable();
-  if (tabName === "watchlist") loadWatchlistTab();
-}
+  if (tabName === "watchlist") loadWatchlistTab();}
 
 
 // ---------------------------------------------------------------------------
@@ -65,48 +64,195 @@ function switchInnerTab(name, btn) {
 
 
 // ---------------------------------------------------------------------------
-// PCR tab — full table with all columns
+// PCR Table — full 11-column option chain table
 // ---------------------------------------------------------------------------
-let _pcrLoaded = false;
+let _pcrLoaded  = false;
+let _pcrData    = [];      // full dataset for client-side sort/filter
+let _pcrSortCol = -1;
+let _pcrSortAsc = true;
 
 async function loadPCRFullTable() {
-  if (_pcrLoaded) return;   // already loaded
   const tbody = document.getElementById("pcrFullBody");
   if (!tbody) return;
 
   try {
     const data = await apiFetch("/market");
-    tbody.innerHTML = "";
-    data.forEach(s => {
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>
-          <strong class="stock-link" onclick="openStockDetail('${esc(s.symbol)}')"
-            style="cursor:pointer">${esc(s.symbol)}</strong>
-        </td>
-        <td class="text-warning">₹${Number(s.ltp).toLocaleString("en-IN", {maximumFractionDigits:2})}</td>
-        <td>${s.pcr}</td>
-        <td class="${signalClass(s.signal)}">${esc(s.signal)}</td>
-        <td>${fmtOI(s.call_oi)}</td>
-        <td>${fmtOI(s.put_oi)}</td>
-        <td>₹${Number(s.max_pain).toLocaleString("en-IN")}</td>
-        <td>
+    _pcrData   = data;
+    _pcrLoaded = true;
+    _renderPCRTable(data, tbody);
+    _initPCRTooltips();
+  } catch (err) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="text-danger text-center py-3">
+      <i class="bi bi-exclamation-triangle me-1"></i>${esc(err.message)}</td></tr>`;
+  }
+}
+
+function _renderPCRTable(data, tbody) {
+  if (!tbody) tbody = document.getElementById("pcrFullBody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  data.forEach(s => {
+    const row = document.createElement("tr");
+    row.setAttribute("data-symbol", s.symbol);
+
+    row.innerHTML = `
+      <td>
+        <strong class="stock-link" onclick="openStockDetail('${esc(s.symbol)}')"
+          style="cursor:pointer" title="Open ${esc(s.symbol)} detail">
+          ${esc(s.symbol)}
+        </strong>
+      </td>
+      <td class="text-warning fw-semibold text-end">
+        ₹${_fmtPrice(s.ltp)}
+      </td>
+      <td class="text-end fw-semibold ${_pcrColour(s.pcr)}" title="PCR = Put OI / Call OI">
+        ${s.pcr != null ? s.pcr : '—'}
+      </td>
+      <td class="text-end ${_deltaColour(s.pcr_change)}" title="PCR change since last refresh">
+        ${_fmtDelta(s.pcr_change, 2, true)}
+      </td>
+      <td class="text-end" title="Total Call Open Interest">
+        ${fmtOI(s.call_oi)}
+      </td>
+      <td class="text-end" title="Total Put Open Interest">
+        ${fmtOI(s.put_oi)}
+      </td>
+      <td class="text-end ${_deltaColour(s.call_oi_chg_pct)}" title="Call OI % change since last refresh">
+        ${_fmtPct(s.call_oi_chg_pct)}
+      </td>
+      <td class="text-end ${_deltaColour(s.put_oi_chg_pct)}" title="Put OI % change since last refresh">
+        ${_fmtPct(s.put_oi_chg_pct)}
+      </td>
+      <td class="text-end ${_deltaColour(s.price_chg_pct)}" title="Price % change since last refresh">
+        ${_fmtPct(s.price_chg_pct, 1)}
+      </td>
+      <td class="${signalClass(s.signal)} fw-semibold" title="Market sentiment">
+        ${esc(s.signal)}
+      </td>
+      <td class="text-end" title="Max Pain strike price">
+        ${s.max_pain ? '₹' + Number(s.max_pain).toLocaleString("en-IN") : '—'}
+      </td>
+      <td>
+        <div class="d-flex gap-1">
           <button class="btn btn-xs btn-outline-warning py-0 px-2"
-            onclick="openStockDetail('${esc(s.symbol)}')">
+            onclick="openStockDetail('${esc(s.symbol)}')" title="Stock detail & option chain">
             <i class="bi bi-box-arrow-up-right"></i>
           </button>
-          <button class="btn btn-xs btn-outline-secondary py-0 px-2 ms-1"
-            onclick="analyzeStock('${esc(s.symbol)}')">
+          <button class="btn btn-xs btn-outline-secondary py-0 px-2"
+            onclick="analyzeStock('${esc(s.symbol)}')" title="Analyze with AI">
             <i class="bi bi-robot"></i>
           </button>
-        </td>`;
-      tbody.appendChild(row);
-    });
-    _pcrLoaded = true;
-  } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">
-      Failed: ${esc(err.message)}</td></tr>`;
+        </div>
+      </td>`;
+    tbody.appendChild(row);
+  });
+}
+
+// Auto-refresh PCR table if it's visible (respects smart interval)
+function refreshPCRIfVisible() {
+  const tab = document.getElementById("tab-pcr");
+  if (tab && tab.style.display !== "none") {
+    loadPCRFullTable();
   }
+}
+
+// Called by dashboard's scheduleNextRefresh
+const _origSchedule = typeof scheduleNextRefresh !== "undefined"
+  ? scheduleNextRefresh : null;
+
+function _initPCRTooltips() {
+  // Bootstrap tooltips on th[data-tip]
+  document.querySelectorAll("#pcrFullTable th[data-tip]").forEach(th => {
+    th.title = th.getAttribute("data-tip");
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PCR Table — filter
+// ---------------------------------------------------------------------------
+function filterPCRTable(query) {
+  const q    = query.toUpperCase().trim();
+  const rows = document.querySelectorAll("#pcrFullBody tr");
+  rows.forEach(row => {
+    const sym = row.querySelector("strong");
+    if (!sym) return;
+    row.style.display = (!q || sym.textContent.includes(q)) ? "" : "none";
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PCR Table — sort
+// ---------------------------------------------------------------------------
+function sortPCRTable(colIndex) {
+  if (_pcrSortCol === colIndex) {
+    _pcrSortAsc = !_pcrSortAsc;
+  } else {
+    _pcrSortCol = colIndex;
+    _pcrSortAsc = false;   // default: descending (highest first)
+  }
+
+  // Update header arrow
+  document.querySelectorAll("#pcrFullTable th").forEach((th, i) => {
+    th.classList.remove("sort-asc", "sort-desc");
+    if (i === colIndex) th.classList.add(_pcrSortAsc ? "sort-asc" : "sort-desc");
+  });
+
+  const keys = [
+    "symbol", "ltp", "pcr", "pcr_change",
+    "call_oi", "put_oi", "call_oi_chg_pct", "put_oi_chg_pct",
+    "price_chg_pct", "signal", "max_pain"
+  ];
+  const key = keys[colIndex];
+  if (!key) return;
+
+  const sorted = [..._pcrData].sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+    return _pcrSortAsc ? cmp : -cmp;
+  });
+
+  _renderPCRTable(sorted);
+}
+
+
+// ---------------------------------------------------------------------------
+// Delta formatting helpers
+// ---------------------------------------------------------------------------
+
+function _deltaColour(val) {
+  if (val == null) return "text-secondary";
+  if (val > 0)     return "text-success";
+  if (val < 0)     return "text-danger";
+  return "text-secondary";
+}
+
+function _pcrColour(pcr) {
+  if (pcr == null) return "";
+  if (pcr > 1.2)   return "text-success";
+  if (pcr >= 1.0)  return "text-success";
+  if (pcr >= 0.8)  return "text-warning";
+  return "text-danger";
+}
+
+function _fmtPrice(n) {
+  if (!n) return "—";
+  return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+function _fmtDelta(val, decimals = 2, showPlus = true) {
+  if (val == null) return '<span class="text-secondary">—</span>';
+  const sign = (showPlus && val > 0) ? "+" : "";
+  return sign + val.toFixed(decimals);
+}
+
+function _fmtPct(val, decimals = 0) {
+  if (val == null) return '<span class="text-secondary">—</span>';
+  const sign = val > 0 ? "+" : "";
+  return sign + val.toFixed(decimals) + "%";
 }
 
 
