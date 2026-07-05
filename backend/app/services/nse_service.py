@@ -40,25 +40,25 @@ except ImportError:
 # Option Chain
 # ---------------------------------------------------------------------------
 
-def get_option_chain(symbol: str) -> dict:
+def get_option_chain(symbol: str, expiry: str = None) -> dict:
     """
     Fetch option chain. TTL: 15s market hours, 60s outside.
     """
-    key = f"option_chain:{symbol.upper()}"
+    symbol = symbol.upper()
+    key = f"option_chain:{symbol}:{expiry or 'nearest'}"
     return cache_service.get_or_fetch(
         key,
-        lambda: _fetch_option_chain(symbol),
+        lambda: _fetch_option_chain(symbol, expiry),
         ttl=cache_service.market_ttl(),
     )
 
 
-def _fetch_option_chain(symbol: str) -> dict:
+def _fetch_option_chain(symbol: str, expiry: str = None) -> dict:
     # Try Angel One live data first (real OI from instrument master)
     try:
-        from app.services.angel_service import _fetch_option_chain_live
-        result = _fetch_option_chain_live(symbol)
+        from app.services.angel_service import get_option_chain_live
+        result = get_option_chain_live(symbol, expiry)
         if result.get("source") == "angel_one_live":
-            # Normalise key names to match existing contract
             result.setdefault("expiry_dates", [result.get("expiry")] if result.get("expiry") else [])
             return result
     except Exception as exc:
@@ -77,11 +77,17 @@ def _fetch_option_chain(symbol: str) -> dict:
 
             exp_dates     = records.get("expiryDates", [])
             atm_price     = records.get("underlyingValue", 0)
+
+            # Filter data to the target expiry date
+            target_expiry = expiry if (expiry and expiry in exp_dates) else (exp_dates[0] if exp_dates else None)
+
             total_call_oi = 0
             total_put_oi  = 0
             strikes       = []
 
             for rec in data:
+                if target_expiry and rec.get("expiryDate") != target_expiry:
+                    continue
                 strike = rec.get("strikePrice", 0)
                 ce     = rec.get("CE", {})
                 pe     = rec.get("PE", {})
@@ -103,6 +109,7 @@ def _fetch_option_chain(symbol: str) -> dict:
             return {
                 "symbol":        symbol.upper(),
                 "underlying":    atm_price,
+                "expiry":        target_expiry,
                 "expiry_dates":  exp_dates[:5],
                 "total_call_oi": total_call_oi,
                 "total_put_oi":  total_put_oi,

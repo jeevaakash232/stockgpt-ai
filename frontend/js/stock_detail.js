@@ -108,9 +108,16 @@ function renderStockModal(d) {
 
     <!-- Option Chain Table (loaded async) -->
     <div id="optionChainSection" class="mt-3">
-      <div class="d-flex align-items-center justify-content-between mb-2">
+      <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
         <h6 class="mb-0 text-warning"><i class="bi bi-table me-2"></i>Option Chain — ${esc(d.symbol)}</h6>
-        <small class="text-muted" id="ocExpiry">Loading…</small>
+        <div class="d-flex align-items-center gap-2">
+          <label for="ocExpirySelect" class="text-muted small mb-0">Expiry Date:</label>
+          <select id="ocExpirySelect" class="form-select form-select-sm bg-dark text-white border-secondary"
+            style="width: 145px; font-size: 0.8rem; height: 31px; padding: 2px 8px;"
+            onchange="loadOptionChain('${esc(d.symbol)}', this.value)">
+            <option value="">Loading…</option>
+          </select>
+        </div>
       </div>
       <div id="optionChainTable">
         <div class="text-center py-3 text-muted">
@@ -204,18 +211,30 @@ function fmtCap(n) {
 // Option Chain — loaded async after modal renders
 // ---------------------------------------------------------------------------
 
-async function loadOptionChain(symbol) {
-  const tableDiv  = document.getElementById("optionChainTable");
-  const expiryDiv = document.getElementById("ocExpiry");
+async function loadOptionChain(symbol, targetExpiry = null) {
+  const tableDiv = document.getElementById("optionChainTable");
+  const select   = document.getElementById("ocExpirySelect");
   if (!tableDiv) return;
 
   try {
-    const oc = await apiFetch(`/option-chain/${encodeURIComponent(symbol)}`);
+    const url = targetExpiry
+      ? `/option-chain/${encodeURIComponent(symbol)}?expiry=${encodeURIComponent(targetExpiry)}`
+      : `/option-chain/${encodeURIComponent(symbol)}`;
+    const oc = await apiFetch(url);
 
-    if (expiryDiv) {
-      expiryDiv.textContent = oc.expiry
-        ? `Expiry: ${oc.expiry} | PCR: ${oc.pcr} | Max Pain: ₹${fmt(oc.max_pain)}`
-        : "Sample data";
+    // Populate expiry dropdown selector
+    if (select) {
+      const dates = oc.expiry_dates && oc.expiry_dates.length
+        ? oc.expiry_dates
+        : (oc.expiry ? [oc.expiry] : []);
+
+      if (dates.length) {
+        select.innerHTML = dates.map(d =>
+          `<option value="${esc(d)}" ${d === oc.expiry ? 'selected' : ''}>${esc(d)}</option>`
+        ).join("");
+      } else {
+        select.innerHTML = `<option value="">Unavailable</option>`;
+      }
     }
 
     const strikes = oc.strikes || [];
@@ -233,7 +252,7 @@ async function loadOptionChain(symbol) {
       Math.abs(curr.strike - atm) < Math.abs(prev.strike - atm) ? curr : prev
     ).strike;
 
-    // Sort by strike descending for call-side-first display
+    // Sort by strike descending for display
     const sorted = [...strikes].sort((a, b) => b.strike - a.strike);
 
     tableDiv.innerHTML = `
@@ -272,10 +291,11 @@ async function loadOptionChain(symbol) {
           </tbody>
         </table>
       </div>
-      <div class="d-flex gap-4 mt-2 px-1" style="font-size:0.75rem;color:var(--text-muted)">
+      <div class="d-flex gap-3 mt-2 px-1 flex-wrap" style="font-size:0.75rem;color:var(--text-muted)">
         <span>Total Call OI: <strong class="text-success">${fmtOI(oc.total_call_oi)}</strong></span>
         <span>Total Put OI: <strong class="text-danger">${fmtOI(oc.total_put_oi)}</strong></span>
         <span>PCR: <strong class="${signalClass(oc.signal)}">${oc.pcr}</strong></span>
+        <span>Max Pain: <strong class="text-warning">₹${fmt(oc.max_pain)}</strong></span>
         <span class="${oc.source === 'angel_one_live' ? 'text-success' : 'text-muted'}">
           ${oc.source === 'angel_one_live' ? '● Live' : '○ Estimated'}
         </span>

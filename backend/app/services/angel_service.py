@@ -358,30 +358,46 @@ def _fetch_oi_for_tokens(tokens: list[str]) -> dict[str, dict]:
 # Option Chain — the main public function
 # ---------------------------------------------------------------------------
 
-def get_option_chain_live(symbol: str) -> dict:
+def get_option_chain_live(symbol: str, expiry: str = None) -> dict:
     """
     Returns LIVE option chain with per-strike Call/Put OI,
     total OI, PCR, Max Pain. TTL: 15s market hours, 60s outside.
     """
-    key = f"angel_oc:{symbol.upper()}"
+    symbol = symbol.upper()
+    key = f"angel_oc:{symbol}:{expiry or 'nearest'}"
     return cache_service.get_or_fetch(
         key,
-        lambda: _fetch_option_chain_live(symbol),
+        lambda: _fetch_option_chain_live(symbol, expiry),
         ttl=cache_service.market_ttl(),
     )
 
 
-def _fetch_option_chain_live(symbol: str) -> dict:
+def _fetch_option_chain_live(symbol: str, expiry: str = None) -> dict:
     symbol   = symbol.upper()
 
     try:
-        # 1. Get nearest expiry
-        expiries = _get_nearest_expiries(symbol)
-        if not expiries:
+        # 1. Get expiries and map target expiry to index
+        raw_exp = _get_nearest_expiries(symbol)
+        if not raw_exp:
             logger.warning("No expiries found for %s, using fallback", symbol)
             return _fallback_oc(symbol)
 
-        nearest_expiry = expiries[0]
+        formatted_expiries = []
+        for r in raw_exp:
+            try:
+                # e.g., '30JUL2026' -> '30-Jul-2026'
+                dt = datetime.strptime(r, "%d%b%Y")
+                formatted_expiries.append(dt.strftime("%d-%b-%Y"))
+            except Exception:
+                formatted_expiries.append(r)
+
+        target_idx = 0
+        if expiry and expiry in formatted_expiries:
+            target_idx = formatted_expiries.index(expiry)
+
+        nearest_expiry = raw_exp[target_idx]
+        expiry_display = formatted_expiries[target_idx]
+
         logger.info("Option chain [%s] expiry: %s", symbol, nearest_expiry)
 
         # 2. Get tokens for CE and PE
@@ -453,8 +469,8 @@ def _fetch_option_chain_live(symbol: str) -> dict:
         return {
             "symbol":        symbol,
             "underlying":    underlying,
-            "expiry":        nearest_expiry,
-            "expiry_dates":  expiries,
+            "expiry":        expiry_display,
+            "expiry_dates":  formatted_expiries,
             "total_call_oi": total_call_oi,
             "total_put_oi":  total_put_oi,
             "pcr":           pcr,

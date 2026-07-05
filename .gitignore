@@ -37,3 +37,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+backend/*.db-shm
+backend/*.db-wal
