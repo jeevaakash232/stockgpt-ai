@@ -33,10 +33,26 @@ ALLOWED_ORIGINS = [
 if _FRONTEND_URL:
     ALLOWED_ORIGINS.append(_FRONTEND_URL)
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-warm caches in background so first request is fast."""
+    from app.services.yahoo_service import warm_cache as yahoo_warm
+    try:
+        from app.services.angel_service import warm_cache as angel_warm
+        angel_warm()
+    except Exception:
+        pass   # Angel One optional — app runs without it
+    yahoo_warm()
+    yield   # app runs here
+
+
 app = FastAPI(
     title="StockGPT AI",
     description="AI-powered Indian Stock Market Analysis API",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -64,15 +80,6 @@ app.include_router(export_router,       prefix="/api", tags=["Export"])
 @app.get("/")
 def root():
     return {"status": "StockGPT AI backend is running", "version": "2.0.0"}
-
-
-@app.on_event("startup")
-async def on_startup():
-    """Pre-warm caches in background so first request is fast."""
-    from app.services.yahoo_service import warm_cache as yahoo_warm
-    from app.services.angel_service import warm_cache as angel_warm
-    yahoo_warm()
-    angel_warm()
 
 
 if __name__ == "__main__":
