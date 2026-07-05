@@ -159,7 +159,35 @@ def _build_market() -> list[dict]:
         for row in result
         if row["ltp"] > 0
     }
-    cache_service.set(_PREV_SNAPSHOT_KEY, new_snapshot, ttl=21600)   # 6 hours
+    cache_service.set(_PREV_SNAPSHOT_KEY, new_snapshot, ttl=21600)
+
+    # ── Persist to SQLite in background ─────────────────────
+    import threading
+    from datetime import datetime as _dt
+
+    def _persist():
+        try:
+            from app.services.history_service import (
+                save_intraday_tick, save_daily_snapshot, prune_old_ticks
+            )
+            import pytz as _tz
+            ist     = _tz.timezone("Asia/Kolkata")
+            now_ist = _dt.now(ist)
+            day     = now_ist.weekday()
+            mins    = now_ist.hour * 60 + now_ist.minute
+
+            if day < 5 and 545 <= mins <= 945:      # 9:05 – 3:45 IST
+                save_intraday_tick(result)
+
+            if day < 5 and 925 <= mins <= 935:      # 3:25 – 3:35 IST (market close)
+                save_daily_snapshot(result)
+
+            if mins == 240:                          # 4:00 AM — prune old ticks
+                prune_old_ticks()
+        except Exception as _e:
+            pass  # never crash the main thread
+
+    threading.Thread(target=_persist, daemon=True, name="db-persist").start()
 
     return result
 

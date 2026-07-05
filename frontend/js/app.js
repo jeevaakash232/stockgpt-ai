@@ -43,8 +43,9 @@ function showTab(tabName, linkEl) {
   if (window.innerWidth < 992) closeSidebar();
 
   // Lazy-load data for tabs that need it
-  if (tabName === "pcr") loadPCRFullTable();
-  if (tabName === "watchlist") loadWatchlistTab();}
+  if (tabName === "pcr")     loadPCRFullTable();
+  if (tabName === "watchlist") loadWatchlistTab();
+  if (tabName === "history") initHistoryTab();}
 
 
 // ---------------------------------------------------------------------------

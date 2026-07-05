@@ -15,6 +15,7 @@ from app.api.stock        import router as stock_router
 from app.api.watchlist    import router as watchlist_router
 from app.api.option_chain import router as option_chain_router
 from app.api.export       import router as export_router
+from app.api.history      import router as history_router
 
 load_dotenv()
 
@@ -76,6 +77,7 @@ app.include_router(stock_router,        prefix="/api", tags=["Stock"])
 app.include_router(watchlist_router,    prefix="/api", tags=["Watchlist"])
 app.include_router(option_chain_router, prefix="/api", tags=["OptionChain"])
 app.include_router(export_router,       prefix="/api", tags=["Export"])
+app.include_router(history_router,      prefix="/api", tags=["History"])
 
 
 @app.get("/")

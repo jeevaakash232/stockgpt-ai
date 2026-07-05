@@ -19,6 +19,7 @@ env/
 # Database
 *.db
 *.sqlite3
+stockgpt.db
 
 # Angel One disk cache (re-downloaded on startup)
 backend/data/instrument_master.json

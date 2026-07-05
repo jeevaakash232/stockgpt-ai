@@ -222,6 +222,58 @@ def export_excel():
         ws6.cell(row=3, column=1, value="Watchlist is empty").font = INFO_FONT
     _widths(ws6, [18, 15, 13])
 
+    # ════════════════════════════════════════════════════════
+    # Sheet 7 — Yesterday's Historical Snapshot (if available)
+    # ════════════════════════════════════════════════════════
+    try:
+        from app.services.history_service import get_all_symbols_history, get_available_dates
+        from datetime import date as _date, timedelta
+
+        dates     = get_available_dates()
+        hist_date = None
+        hist_rows = []
+
+        # Try yesterday first, then most recent available date
+        yesterday = (_date.today() - timedelta(days=1)).isoformat()
+        if yesterday in dates:
+            hist_date = yesterday
+        elif dates:
+            hist_date = dates[0]   # most recent
+
+        if hist_date:
+            hist_rows = get_all_symbols_history(trade_date=hist_date)
+
+        if hist_rows:
+            ws7 = wb.create_sheet(f"History {hist_date}")
+            ws7.freeze_panes = "A3"
+            _info(ws7, 1, f"Historical Snapshot   |   {hist_date}   |   {len(hist_rows)} symbols")
+            _header(ws7, 2, ["#", "Symbol", "LTP (₹)", "Prev Close (₹)", "Price Δ%",
+                              "PCR", "Signal", "Call OI", "Put OI", "Max Pain (₹)"])
+
+            for i, s in enumerate(hist_rows):
+                r    = i + 3
+                fill = _signal_fill(s.get("signal", ""))
+                pct  = s.get("price_chg_pct")
+                _row(ws7, r, [
+                    i + 1,
+                    s["symbol"],
+                    s.get("ltp"),
+                    s.get("prev_close"),
+                    pct,
+                    s.get("pcr"),
+                    s.get("signal"),
+                    s.get("call_oi"),
+                    s.get("put_oi"),
+                    s.get("max_pain"),
+                ], fill)
+                for col, fmt in [(3, "#,##0.00"), (4, "#,##0.00"), (5, "+0.0;-0.0"),
+                                 (6, "0.00"), (8, "#,##0"), (9, "#,##0"), (10, "#,##0.00")]:
+                    ws7.cell(row=r, column=col).number_format = fmt
+
+            _widths(ws7, [4, 16, 13, 14, 11, 7, 16, 14, 14, 14])
+    except Exception:
+        pass   # history not yet populated — skip this sheet silently
+
     # ── Stream ────────────────────────────────────────────────
     buf = io.BytesIO()
     wb.save(buf)
