@@ -79,7 +79,7 @@ def get_market() -> list[dict]:
     return cache_service.get_or_fetch(
         "market_data",
         _build_market,
-        ttl=_get_cache_ttl(),
+        ttl=cache_service.market_ttl(),
     )
 
 
