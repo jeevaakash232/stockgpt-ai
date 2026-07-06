@@ -68,43 +68,66 @@ def _safe_float(val) -> Optional[float]:
 
 def _extract_quote(ticker_obj: yf.Ticker) -> dict:
     """Pull a standardised quote dict from a yf.Ticker object."""
-    info = {}
+    fast = None
     try:
-        info = ticker_obj.info or {}
+        fast = ticker_obj.fast_info
     except Exception:
         pass
 
-    fast = {}
-    try:
-        fast = ticker_obj.fast_info or {}
-    except Exception:
-        pass
+    info = {}
+    # Only access the extremely slow .info property if fast_info is unavailable
+    if not fast or getattr(fast, "last_price", None) is None:
+        try:
+            info = ticker_obj.info or {}
+        except Exception:
+            pass
 
     def _get(*keys):
         for k in keys:
-            v = info.get(k) or getattr(fast, k, None)
+            # Map fast_info attributes
+            fast_attr = k
+            if k == "currentPrice": fast_attr = "last_price"
+            elif k == "regularMarketPrice": fast_attr = "last_price"
+            elif k == "regularMarketPreviousClose": fast_attr = "previous_close"
+            elif k == "previousClose": fast_attr = "previous_close"
+            elif k == "dayHigh": fast_attr = "day_high"
+            elif k == "dayLow": fast_attr = "day_low"
+            elif k == "day_high": fast_attr = "day_high"
+            elif k == "day_low": fast_attr = "day_low"
+
+            v = getattr(fast, fast_attr, None) if fast else None
+            if v is None and info:
+                v = info.get(k)
             if v is not None:
                 return _safe_float(v)
         return None
 
     current = _get("currentPrice", "regularMarketPrice", "last_price")
-    prev    = _get("previousClose", "regularMarketPreviousClose")
+    prev    = _get("previousClose", "regularMarketPreviousClose", "previous_close")
     change  = None
     pct     = None
     if current is not None and prev is not None and prev != 0:
         change = round(current - prev, 2)
         pct    = round((change / prev) * 100, 2)
 
+    volume = _safe_float(getattr(fast, "last_volume", None)) if fast else None
+    if volume is None and info:
+        volume = _safe_float(info.get("volume") or info.get("regularMarketVolume"))
+
+    market_cap = _safe_float(getattr(fast, "market_cap", None)) if fast else None
+    if market_cap is None and info:
+        market_cap = _safe_float(info.get("marketCap"))
+
     return {
         "current_price": current,
         "open":          _get("open", "regularMarketOpen"),
-        "high":          _get("dayHigh", "regularMarketDayHigh"),
-        "low":           _get("dayLow",  "regularMarketDayLow"),
+        "high":          _get("dayHigh", "regularMarketDayHigh", "day_high"),
+        "low":           _get("dayLow",  "regularMarketDayLow", "day_low"),
         "prev_close":    prev,
-        "volume":        _safe_float(info.get("volume") or info.get("regularMarketVolume")),
-        "market_cap":    _safe_float(info.get("marketCap")),
-        "week_52_high":  _get("fiftyTwoWeekHigh"),
-        "week_52_low":   _get("fiftyTwoWeekLow"),
+        "volume":        volume,
+        "market_cap":    market_cap,
+        "week_52_high":  _get("fiftyTwoWeekHigh", "year_high"),
+        "week_52_low":   _get("fiftyTwoWeekLow", "year_low"),
         "change":        change,
         "change_pct":    pct,
     }

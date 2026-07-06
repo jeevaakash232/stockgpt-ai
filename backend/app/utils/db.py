@@ -38,7 +38,7 @@ def get_db_cursor(sqlite_path: str = _DB_PATH):
         from psycopg2.extras import RealDictCursor
         
         # Open PostgreSQL connection
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         try:
             yield cursor, conn
