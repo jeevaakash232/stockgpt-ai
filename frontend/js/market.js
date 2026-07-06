@@ -23,10 +23,11 @@ async function loadPCRTable() {
     const data = await apiFetch("/market");
     tbody.innerHTML = "";
 
-    data.forEach(s => {
+    data.forEach((s, idx) => {
       const row = document.createElement("tr");
       row.setAttribute("data-symbol", s.symbol);
       row.innerHTML = `
+        <td>${idx + 1}</td>
         <td>
           <strong class="stock-link" onclick="openStockDetail('${esc(s.symbol)}')"
             style="cursor:pointer">${esc(s.symbol)}</strong>
