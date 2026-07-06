@@ -16,7 +16,7 @@ async function downloadExcel() {
   _setDownloadLoading(fab, true, "Downloading…");
 
   try {
-    const response = await fetch(`${API_BASE}/export/excel`, {
+    const response = await fetch(`${API_BASE}/export/excel?t=${Date.now()}`, {
       method: "GET",
       headers: { "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
     });
@@ -54,7 +54,7 @@ async function downloadCSV() {
   _setDownloadLoading(btn, true, "CSV");
 
   try {
-    const response = await fetch(`${API_BASE}/export/csv`);
+    const response = await fetch(`${API_BASE}/export/csv?t=${Date.now()}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const text     = await response.text();

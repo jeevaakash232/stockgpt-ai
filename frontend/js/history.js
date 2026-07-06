@@ -196,7 +196,7 @@ async function downloadHistoryExcel() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Downloading…'; }
 
   try {
-    const response = await fetch(`${API_BASE}/history/download/${date}`);
+    const response = await fetch(`${API_BASE}/history/download/${date}?t=${Date.now()}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const blob     = await response.blob();

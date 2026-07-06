@@ -11,6 +11,9 @@ from datetime import date, timedelta
 # Append backend directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from app.utils.db import get_db_cursor, q, is_postgres
 from app.services.market_data import _build_market
 

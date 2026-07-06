@@ -30,13 +30,17 @@ def export_excel():
     from openpyxl.utils import get_column_letter
 
     # ── Data ──────────────────────────────────────────────────
-    from app.services.market_data    import get_market
+    from app.services.market_data    import _build_market
     from app.services.market_service import (
         get_top_gainers, get_top_losers, get_most_active, get_indices
     )
     from app.services import watchlist_service
 
-    market  = get_market()
+    # Bypass cache to fetch absolute latest values from API/DB
+    from app.services import cache_service
+    cache_service.invalidate("prev_day_snapshot")
+    cache_service.invalidate("market_data")
+    market  = _build_market()
     gainers = get_top_gainers()
     losers  = get_top_losers()
     active  = get_most_active()
@@ -282,7 +286,12 @@ def export_excel():
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        },
     )
 
 
@@ -293,9 +302,13 @@ def export_excel():
 @router.get("/export/csv", summary="Download all stocks as CSV")
 def export_csv():
     """Plain CSV of all NSE F&O stocks — opens directly in Excel or Google Sheets."""
-    from app.services.market_data import get_market
+    from app.services.market_data import _build_market
 
-    market = get_market()
+    # Bypass cache to fetch absolute latest values
+    from app.services import cache_service
+    cache_service.invalidate("prev_day_snapshot")
+    cache_service.invalidate("market_data")
+    market = _build_market()
     lines  = ["Symbol,LTP,PCR,Signal,Call OI,Put OI,Max Pain"]
     for s in market:
         lines.append(
@@ -307,5 +320,10 @@ def export_csv():
     return StreamingResponse(
         io.StringIO("\n".join(lines)),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        },
     )
