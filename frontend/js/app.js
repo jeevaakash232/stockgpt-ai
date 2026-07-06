@@ -132,7 +132,7 @@ function _renderPCRTable(data, tbody) {
         ${_fmtDelta(s.pcr_change, 2, true)}
       </td>
       <td class="text-end ${_deltaColour(s.pcr_change_pct)}" title="% change in PCR since yesterday">
-        ${s.pcr_change_pct != null ? (s.pcr_change_pct > 0 ? '+' : '') + s.pcr_change_pct.toFixed(2) + '%' : '—'}
+        ${s.pcr_change_pct != null ? (s.pcr_change_pct > 0 ? '+' : '') + s.pcr_change_pct.toFixed(2) : '—'}
       </td>
       <td>
         <div class="d-flex gap-1">

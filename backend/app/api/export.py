@@ -123,7 +123,6 @@ def export_excel():
         price_chg_val = price_chg / 100.0 if price_chg is not None else None
 
         pcr_chg_pct = s.get("pcr_change_pct")
-        pcr_chg_pct_val = pcr_chg_pct / 100.0 if pcr_chg_pct is not None else None
 
         _row(ws, r, [
             i+1, 
@@ -136,7 +135,7 @@ def export_excel():
             s["pcr"],
             s.get("prev_day_pcr"),
             s.get("pcr_change"),
-            pcr_chg_pct_val,
+            pcr_chg_pct,
             s.get("expiry"),
             s["signal"]
         ], fill)
@@ -156,7 +155,7 @@ def export_excel():
         ws.cell(row=r, column=8).number_format = '0.00'
         ws.cell(row=r, column=9).number_format = '0.00'
         ws.cell(row=r, column=10).number_format = '+0.00;-0.00;0.00'
-        ws.cell(row=r, column=11).number_format = '+0.00%;-0.00%;0.00%'
+        ws.cell(row=r, column=11).number_format = '+0.00;-0.00;0.00'
 
     _widths(ws, [4, 16, 14, 15, 14, 14, 15, 16, 17, 10, 17, 14, 16])
 
@@ -336,7 +335,7 @@ def export_csv():
     lines  = ["Symbol,Price,Price Change %,Call OI,Put OI,Max Pain,Current Day PCR,Previous Day PCR,Delta PCR,PCR Change %,Expiry Date,Signal"]
     for s in market:
         price_chg = f"{s['price_chg_pct']}%" if s.get('price_chg_pct') is not None else ""
-        pcr_chg_pct = f"{s['pcr_change_pct']}%" if s.get('pcr_change_pct') is not None else ""
+        pcr_chg_pct = s.get('pcr_change_pct') if s.get('pcr_change_pct') is not None else ""
         prev_pcr = s.get('prev_day_pcr') if s.get('prev_day_pcr') is not None else ""
         pcr_change = s.get('pcr_change') if s.get('pcr_change') is not None else ""
         expiry = s.get('expiry') if s.get('expiry') is not None else ""
