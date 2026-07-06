@@ -300,10 +300,18 @@
     <div id="tab-pcr" class="tab-panel" style="display:none">
       <div class="page-header">
         <h4 class="page-title"><i class="bi bi-table me-2"></i>Option Chain — PCR &amp; OI</h4>
-        <div class="d-flex align-items-center gap-2">
-          <input id="pcrFilter" class="form-control form-control-sm bg-dark text-white border-secondary"
-            placeholder="Filter symbol…" style="width:160px" oninput="filterPCRTable(this.value)" />
-          <span class="text-muted small">Click column header to sort</span>
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div class="text-start d-flex flex-column">
+            <span class="text-white small mb-1" style="font-size: 0.75rem; font-weight: 500; opacity: 0.85;">Expiry Date</span>
+            <select id="pcrExpiryFilter" class="form-select form-select-sm bg-dark text-white border-secondary" style="width:140px; font-size: 0.85rem;" onchange="filterPCRTableByExpiry(this.value)">
+              <option value="">Select</option>
+            </select>
+          </div>
+          <div class="text-start d-flex flex-column">
+            <span class="text-white small mb-1" style="font-size: 0.75rem; font-weight: 500; opacity: 0.85;">Filter</span>
+            <input id="pcrFilter" class="form-control form-control-sm bg-dark text-white border-secondary"
+              placeholder="Filter symbol…" style="width:160px; font-size: 0.85rem;" oninput="filterPCRTable(this.value)" />
+          </div>
         </div>
       </div>
 
@@ -322,12 +330,11 @@
                 <th class="sortable" onclick="sortPCRTable(7)" data-tip="Previous day closing PCR">Previous day PCR</th>
                 <th class="sortable" onclick="sortPCRTable(8)" data-tip="Δ PCR = Current day PCR - Previous day PCR">Δ PCR</th>
                 <th class="sortable" onclick="sortPCRTable(9)" data-tip="% Change in PCR = ((Current - Previous) / Previous) * 100">% change in PCR</th>
-                <th class="sortable" onclick="sortPCRTable(10)" data-tip="Nearest contract expiry date">Expiry Date</th>
                 <th data-tip="Open stock detail and option chain">Actions</th>
               </tr>
             </thead>
             <tbody id="pcrFullBody">
-              <tr><td colspan="12" class="loading-row"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</td></tr>
+              <tr><td colspan="11" class="loading-row"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</td></tr>
             </tbody>
           </table>
         </div>

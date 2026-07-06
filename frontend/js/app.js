@@ -81,9 +81,11 @@ async function loadPCRFullTable() {
     _pcrData   = data;
     _pcrLoaded = true;
     _renderPCRTable(data, tbody);
+    populateExpiryDropdown(data);
+    filterPCRTable();
     _initPCRTooltips();
   } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="text-danger text-center py-3">
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="text-danger text-center py-3">
       <i class="bi bi-exclamation-triangle me-1"></i>${esc(err.message)}</td></tr>`;
   }
 }
@@ -96,6 +98,7 @@ function _renderPCRTable(data, tbody) {
   data.forEach(s => {
     const row = document.createElement("tr");
     row.setAttribute("data-symbol", s.symbol);
+    row.setAttribute("data-expiry", s.expiry || "");
 
     row.innerHTML = `
       <td>
@@ -130,9 +133,6 @@ function _renderPCRTable(data, tbody) {
       </td>
       <td class="text-end ${_deltaColour(s.pcr_change_pct)}" title="% change in PCR since yesterday">
         ${s.pcr_change_pct != null ? (s.pcr_change_pct > 0 ? '+' : '') + s.pcr_change_pct.toFixed(2) + '%' : '—'}
-      </td>
-      <td class="text-end text-muted small" title="Nearest contract expiry">
-        ${s.expiry ? s.expiry : '—'}
       </td>
       <td>
         <div class="d-flex gap-1">
@@ -173,13 +173,70 @@ function _initPCRTooltips() {
 // PCR Table — filter
 // ---------------------------------------------------------------------------
 function filterPCRTable(query) {
-  const q    = query.toUpperCase().trim();
+  const textInput = document.getElementById("pcrFilter");
+  if (typeof query === "string" && textInput) {
+    textInput.value = query;
+  }
+
+  const q = textInput ? textInput.value.toUpperCase().trim() : "";
+  const expirySelect = document.getElementById("pcrExpiryFilter");
+  const exp = expirySelect ? expirySelect.value : "";
+
   const rows = document.querySelectorAll("#pcrFullBody tr");
   rows.forEach(row => {
-    const sym = row.querySelector("strong");
-    if (!sym) return;
-    row.style.display = (!q || sym.textContent.includes(q)) ? "" : "none";
+    const sym = (row.getAttribute("data-symbol") || "").toUpperCase();
+    const expiry = row.getAttribute("data-expiry") || "";
+
+    const matchesText = !q || sym.includes(q);
+    const matchesExpiry = !exp || expiry === exp;
+
+    if (matchesText && matchesExpiry) {
+      row.style.display = "";
+    } else {
+      row.style.display = "none";
+    }
   });
+}
+
+function filterPCRTableByExpiry(val) {
+  filterPCRTable();
+}
+
+function parseExpiryDate(dStr) {
+  if (!dStr) return new Date(0);
+  const pts = dStr.split('-');
+  if (pts.length !== 3) return new Date(0);
+  const months = {
+    jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11
+  };
+  const d = parseInt(pts[0], 10);
+  const m = months[pts[1].toLowerCase()] || 0;
+  const y = parseInt(pts[2], 10);
+  return new Date(y, m, d);
+}
+
+function populateExpiryDropdown(data) {
+  const select = document.getElementById("pcrExpiryFilter");
+  if (!select) return;
+
+  // Extract unique expiries
+  const expiries = [...new Set(data.map(s => s.expiry).filter(Boolean))];
+  
+  // Sort chronologically
+  expiries.sort((a, b) => parseExpiryDate(a) - parseExpiryDate(b));
+
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">Select</option>';
+  expiries.forEach(exp => {
+    const opt = document.createElement("option");
+    opt.value = exp;
+    opt.textContent = exp;
+    select.appendChild(opt);
+  });
+
+  if (currentVal && expiries.includes(currentVal)) {
+    select.value = currentVal;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +258,7 @@ function sortPCRTable(colIndex) {
 
   const keys = [
     "symbol", "ltp", "price_chg_pct", "call_oi", "put_oi", "max_pain",
-    "pcr", "prev_day_pcr", "pcr_change", "pcr_change_pct", "expiry"
+    "pcr", "prev_day_pcr", "pcr_change", "pcr_change_pct"
   ];
   const key = keys[colIndex];
   if (!key) return;
