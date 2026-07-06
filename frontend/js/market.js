@@ -20,7 +20,7 @@ async function loadPCRTable() {
   if (!tbody) return;
 
   try {
-    const data = await apiFetch("/market");
+    const data = await apiFetch("/market?t=" + Date.now());
     tbody.innerHTML = "";
 
     data.forEach((s, idx) => {

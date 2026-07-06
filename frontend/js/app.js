@@ -77,7 +77,7 @@ async function loadPCRFullTable() {
   if (!tbody) return;
 
   try {
-    const data = await apiFetch("/market");
+    const data = await apiFetch("/market?t=" + Date.now());
     _pcrData   = data;
     _pcrLoaded = true;
     _renderPCRTable(data, tbody);
