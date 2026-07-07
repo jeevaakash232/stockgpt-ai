@@ -362,21 +362,20 @@ def get_all_symbols_history(trade_date: str = None) -> list[dict]:
 
 def get_previous_day_snapshot() -> dict:
     """
-    Return a map of symbol -> snapshot_dict for the most recent trading date before today.
+    Return a map of symbol -> snapshot_dict for the most recent trading date before the latest date.
     """
     try:
-        now_ist = datetime.now(IST)
-        today_str = now_ist.strftime("%Y-%m-%d")
-
         with get_db_cursor() as (c, conn):
-            # Find the most recent date strictly before today
-            c.execute(q("SELECT MAX(trade_date) as dt FROM daily_snapshot WHERE trade_date < ?"), (today_str,))
+            # Find the latest date overall
+            c.execute("SELECT MAX(trade_date) as dt FROM daily_snapshot")
             row = c.fetchone()
-
             if not row or not row["dt"]:
-                # If no date before today, fallback to the latest date overall
-                c.execute("SELECT MAX(trade_date) as dt FROM daily_snapshot")
-                row = c.fetchone()
+                return {}
+            latest_date = row["dt"]
+
+            # Find the most recent date strictly before the latest date
+            c.execute(q("SELECT MAX(trade_date) as dt FROM daily_snapshot WHERE trade_date < ?"), (latest_date,))
+            row = c.fetchone()
 
             if not row or not row["dt"]:
                 return {}

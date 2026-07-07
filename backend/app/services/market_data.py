@@ -97,8 +97,23 @@ def _build_market() -> list[dict]:
         ttl=3600  # cache for 1 hour to avoid excessive DB reads
     ) or {}
 
-    # Load today's snapshot from database if available (for actual PCR/OI metrics)
-    today_str = date.today().strftime("%Y-%m-%d")
+    # Find the latest date in daily_snapshot as "today" (simulated date alignment)
+    today_str = None
+    try:
+        with get_db_cursor() as (c, conn):
+            c.execute("SELECT MAX(trade_date) as dt FROM daily_snapshot")
+            row = c.fetchone()
+            if row and row["dt"]:
+                if hasattr(row["dt"], "strftime"):
+                    today_str = row["dt"].strftime("%Y-%m-%d")
+                else:
+                    today_str = str(row["dt"])
+    except Exception:
+        pass
+
+    if not today_str:
+        today_str = date.today().strftime("%Y-%m-%d")
+
     today_snapshot = {}
     try:
         with get_db_cursor() as (c, conn):
