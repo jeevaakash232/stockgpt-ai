@@ -108,8 +108,8 @@ def _build_market() -> list[dict]:
                     today_str = row["dt"].strftime("%Y-%m-%d")
                 else:
                     today_str = str(row["dt"])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("Failed to query MAX(trade_date) from daily_snapshot:")
 
     if not today_str:
         today_str = date.today().strftime("%Y-%m-%d")
@@ -124,8 +124,8 @@ def _build_market() -> list[dict]:
             today_snapshot = {
                 r["symbol"]: r for r in c.fetchall()
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("Failed to load today_snapshot from daily_snapshot:")
 
     # Load previous snapshot from cache (survives refreshes, resets on restart) for tick fallback
     prev_snapshot = cache_service.get(_PREV_SNAPSHOT_KEY) or {}
