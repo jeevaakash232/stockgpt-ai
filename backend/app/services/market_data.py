@@ -88,12 +88,29 @@ def get_market() -> list[dict]:
 def _build_market() -> list[dict]:
     # Load previous day's snapshot from SQLite (or cache)
     from app.services.history_service import get_previous_day_snapshot
+    from app.utils.db import get_db_cursor, q
+    from datetime import date
 
     prev_day_snapshot = cache_service.get_or_fetch(
         "prev_day_snapshot",
         get_previous_day_snapshot,
         ttl=3600  # cache for 1 hour to avoid excessive DB reads
     ) or {}
+
+    # Load today's snapshot from database if available (for actual PCR/OI metrics)
+    today_str = date.today().strftime("%Y-%m-%d")
+    today_snapshot = {}
+    try:
+        with get_db_cursor() as (c, conn):
+            c.execute(q("""
+                SELECT symbol, call_oi, put_oi, pcr, max_pain
+                FROM daily_snapshot WHERE trade_date = ?
+            """), (today_str,))
+            today_snapshot = {
+                r["symbol"]: r for r in c.fetchall()
+            }
+    except Exception:
+        pass
 
     # Load previous snapshot from cache (survives refreshes, resets on restart) for tick fallback
     prev_snapshot = cache_service.get(_PREV_SNAPSHOT_KEY) or {}
@@ -103,12 +120,20 @@ def _build_market() -> list[dict]:
 
     for sym in get_all_symbols():
         ltp = live_ltps.get(sym, 0.0)
-        oi  = DEFAULT_OI.get(sym, _DEFAULT_OI_FALLBACK)
-
-        call_oi  = oi["call_oi"]
-        put_oi   = oi["put_oi"]
-        max_pain = oi["max_pain"]
-        pcr      = calculate_pcr(call_oi, put_oi)
+        
+        # Check if today's snapshot is pre-populated in database
+        db_snap = today_snapshot.get(sym)
+        if db_snap and db_snap.get("call_oi") is not None and db_snap.get("put_oi") is not None:
+            call_oi  = db_snap["call_oi"]
+            put_oi   = db_snap["put_oi"]
+            max_pain = db_snap["max_pain"] or 0.0
+            pcr      = db_snap["pcr"] or calculate_pcr(call_oi, put_oi)
+        else:
+            oi  = DEFAULT_OI.get(sym, _DEFAULT_OI_FALLBACK)
+            call_oi  = oi["call_oi"]
+            put_oi   = oi["put_oi"]
+            max_pain = oi["max_pain"]
+            pcr      = calculate_pcr(call_oi, put_oi)
 
         # Retrieve previous values from snapshots
         prev = prev_snapshot.get(sym)
