@@ -166,20 +166,53 @@ def get_indices() -> dict:
 def _fetch_indices() -> dict:
     result = {}
     for name, ticker_sym in INDICES.items():
+        q_data = None
         try:
             ticker = yf.Ticker(ticker_sym)
-            q      = _extract_quote(ticker)
+            q_data = _extract_quote(ticker)
+        except Exception as exc:
+            logger.warning("Yahoo Index fetch failed [%s]: %s", name, exc)
+
+        # Fallback to Angel One if Yahoo is rate-limited or fails
+        if not q_data or q_data.get("current_price") is None:
+            try:
+                from app.services.angel_service import _get_session
+                smart = _get_session()
+                resp = None
+                if name == "NIFTY":
+                    resp = smart.ltpData("NSE", "NIFTY", "26000")
+                elif name == "BANKNIFTY":
+                    resp = smart.ltpData("NSE", "BANKNIFTY", "26009")
+                elif name == "SENSEX":
+                    resp = smart.ltpData("BSE", "BSX", "1")
+
+                if resp and resp.get("status") and resp.get("data"):
+                    d = resp["data"]
+                    ltp = float(d.get("ltp", 0))
+                    close = float(d.get("close", 0))
+                    chg = round(ltp - close, 2) if close else 0.0
+                    pct = round((chg / close) * 100, 2) if close else 0.0
+                    q_data = {
+                        "current_price": ltp,
+                        "change": chg,
+                        "change_pct": pct,
+                        "high": float(d.get("high", 0)),
+                        "low": float(d.get("low", 0)),
+                    }
+            except Exception as angel_exc:
+                logger.warning("Angel Index fallback failed [%s]: %s", name, angel_exc)
+
+        if q_data and q_data.get("current_price") is not None:
             result[name] = {
                 "symbol":        name,
-                "current_price": q["current_price"],
-                "change":        q["change"],
-                "change_pct":    q["change_pct"],
-                "high":          q["high"],
-                "low":           q["low"],
+                "current_price": q_data["current_price"],
+                "change":        q_data["change"],
+                "change_pct":    q_data["change_pct"],
+                "high":          q_data["high"],
+                "low":           q_data["low"],
             }
-        except Exception as exc:
-            logger.warning("Index fetch failed [%s]: %s", name, exc)
-            result[name] = {"symbol": name, "error": str(exc)}
+        else:
+            result[name] = {"symbol": name, "error": "Unavailable — rate limited"}
     return result
 
 

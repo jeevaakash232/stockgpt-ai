@@ -247,6 +247,7 @@ def _build_market() -> list[dict]:
             from app.services.history_service import (
                 save_intraday_tick, save_daily_snapshot, prune_old_ticks
             )
+            from app.utils.db import get_db_cursor, q
             import pytz as _tz
             ist     = _tz.timezone("Asia/Kolkata")
             now_ist = _dt.now(ist)
@@ -258,6 +259,19 @@ def _build_market() -> list[dict]:
 
             if day < 5 and 925 <= mins <= 935:      # 3:25 – 3:35 IST (market close)
                 save_daily_snapshot(result)
+            
+            # Catch-up: if after 3:35 PM on a trading day and snapshot is missing, save it
+            if day < 5 and mins > 935:
+                today_str = now_ist.strftime("%Y-%m-%d")
+                has_today = False
+                try:
+                    with get_db_cursor() as (c, conn):
+                        c.execute(q("SELECT 1 FROM daily_snapshot WHERE trade_date = ? LIMIT 1"), (today_str,))
+                        has_today = bool(c.fetchone())
+                except Exception:
+                    pass
+                if not has_today:
+                    save_daily_snapshot(result)
 
             if mins == 240:                          # 4:00 AM — prune old ticks
                 prune_old_ticks()
