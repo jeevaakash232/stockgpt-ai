@@ -272,7 +272,14 @@ def _build_market() -> list[dict]:
                 except Exception:
                     pass
                 if not has_today:
-                    save_daily_snapshot(result)
+                    success = False
+                    try:
+                        from app.services.history_service import import_real_eod_bhavcopy
+                        success = import_real_eod_bhavcopy(today_str)
+                    except Exception:
+                        pass
+                    if not success:
+                        save_daily_snapshot(result)
 
             if mins == 240:                          # 4:00 AM — prune old ticks
                 prune_old_ticks()

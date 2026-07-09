@@ -466,5 +466,132 @@ def get_db_stats() -> dict:
         return {"error": str(exc)}
 
 
+def import_real_eod_bhavcopy(target_date_str: str) -> bool:
+    """
+    Downloads the real UDiFF F&O Bhavcopy for target_date_str from NSE,
+    aggregates option data (Call OI, Put OI, PCR, Max Pain),
+    and saves them directly into daily_snapshot table.
+    """
+    import requests
+    import zipfile
+    import io
+    import pandas as pd
+    
+    url = f"https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{target_date_str.replace('-', '')}_F_0000.csv.zip"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    logger.info("Attempting to download real UDiFF EOD Bhavcopy for %s...", target_date_str)
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            logger.warning("Real EOD UDiFF Bhavcopy not available yet (HTTP %d)", r.status_code)
+            return False
+            
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            names = z.namelist()
+            with z.open(names[0]) as f:
+                df = pd.read_csv(f)
+                df.columns = [c.strip() for c in df.columns]
+                
+        # Filter for valid F&O instruments
+        df = df[df["FinInstrmTp"].isin(["STO", "STF", "IDO", "IDF"])]
+        df["TckrSymb"] = df["TckrSymb"].str.strip()
+        df["OptnTp"] = df["OptnTp"].fillna("XX").str.strip()
+        
+        symbols = df["TckrSymb"].unique()
+        snapshot_rows = []
+        
+        for sym in symbols:
+            sym_df = df[df["TckrSymb"] == sym]
+            
+            # Calculate Call/Put OI
+            call_oi = int(sym_df[sym_df["OptnTp"] == "CE"]["OpnIntrst"].sum())
+            put_oi = int(sym_df[sym_df["OptnTp"] == "PE"]["OpnIntrst"].sum())
+            
+            pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 1.0
+            signal = "Bullish" if pcr >= 1.0 else "Neutral" if pcr >= 0.75 else "Bearish"
+            
+            # Find closing price from Futures as LTP
+            fut_df = sym_df[sym_df["FinInstrmTp"].isin(["STF", "IDF"])]
+            if not fut_df.empty:
+                ltp = float(fut_df.iloc[0]["ClsPric"])
+                open_p = float(fut_df.iloc[0]["OpnPric"]) if pd.notnull(fut_df.iloc[0]["OpnPric"]) and fut_df.iloc[0]["OpnPric"] > 0 else ltp
+                high = float(fut_df.iloc[0]["HghPric"]) if pd.notnull(fut_df.iloc[0]["HghPric"]) and fut_df.iloc[0]["HghPric"] > 0 else ltp
+                low = float(fut_df.iloc[0]["LwPric"]) if pd.notnull(fut_df.iloc[0]["LwPric"]) and fut_df.iloc[0]["LwPric"] > 0 else ltp
+            else:
+                ltp = float(sym_df.iloc[0]["ClsPric"]) if not sym_df.empty else 0.0
+                open_p = ltp
+                high = ltp
+                low = ltp
+                
+            # Max Pain
+            opt_df = sym_df[sym_df["FinInstrmTp"].isin(["STO", "IDO"])]
+            if not opt_df.empty:
+                max_pain = float(opt_df.loc[opt_df["OpnIntrst"].idxmax()]["StrkPric"])
+            else:
+                max_pain = 0.0
+                
+            snapshot_rows.append((
+                target_date_str,
+                sym,
+                ltp,
+                open_p,
+                high,
+                low,
+                open_p,  # prev_close fallback
+                call_oi,
+                put_oi,
+                pcr,
+                signal,
+                max_pain,
+                0.0      # price_chg_pct
+            ))
+            
+        with _DB_LOCK:
+            with get_db_cursor() as (c, conn):
+                # Delete existing records for today
+                c.execute(q("DELETE FROM daily_snapshot WHERE trade_date = ?"), (target_date_str,))
+                
+                # Bulk insert daily snapshots
+                query_snap = q("""
+                    INSERT INTO daily_snapshot
+                        (trade_date, symbol, ltp, open, high, low, prev_close,
+                         call_oi, put_oi, pcr, signal, max_pain, price_chg_pct)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """)
+                c.executemany(query_snap, snapshot_rows)
+                
+                # Recalculate price change percentages for this date
+                c.execute(q("SELECT DISTINCT trade_date FROM daily_snapshot WHERE trade_date < ? ORDER BY trade_date DESC LIMIT 1"), (target_date_str,))
+                prev_row = c.fetchone()
+                
+                if prev_row:
+                    prev_date_val = prev_row[0] if isinstance(prev_row, tuple) else prev_row.get("trade_date")
+                    prev_date_str = prev_date_val.strftime("%Y-%m-%d") if hasattr(prev_date_val, "strftime") else str(prev_date_val)
+                    
+                    c.execute(q("SELECT symbol, ltp FROM daily_snapshot WHERE trade_date = ?"), (prev_date_str,))
+                    prev_ltps = {r[0] if isinstance(r, tuple) else r.get("symbol"): r[1] if isinstance(r, tuple) else r.get("ltp") for r in c.fetchall()}
+                    
+                    # Update snapshots
+                    for r in snapshot_rows:
+                        sym = r[1]
+                        ltp = r[2]
+                        prev_close = prev_ltps.get(sym) or r[3] or ltp
+                        price_chg = round(((ltp - prev_close) / prev_close) * 100, 2) if prev_close > 0 else 0.0
+                        c.execute(q("""
+                            UPDATE daily_snapshot
+                            SET prev_close = ?, price_chg_pct = ?
+                            WHERE trade_date = ? AND symbol = ?
+                        """), (prev_close, price_chg, target_date_str, sym))
+                        
+        logger.info("Successfully imported and recalculated real EOD Bhavcopy for %s.", target_date_str)
+        return True
+    except Exception as exc:
+        logger.error("Failed to import real EOD Bhavcopy for %s: %s", target_date_str, exc)
+        return False
+
+
 # Init on import
 init_db()
