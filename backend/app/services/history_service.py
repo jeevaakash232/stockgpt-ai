@@ -185,10 +185,10 @@ def save_daily_snapshot(market_rows: list[dict]) -> None:
             trade_date,
             s["symbol"],
             s.get("ltp"),
-            s.get("open"),
-            s.get("high"),
-            s.get("low"),
-            s.get("prev_ltp"),   # previous close
+            s.get("open") or s.get("ltp"),
+            s.get("high") or s.get("ltp"),
+            s.get("low") or s.get("ltp"),
+            s.get("prev_close") or s.get("prev_ltp"),   # previous close
             s.get("call_oi"),
             s.get("put_oi"),
             s.get("pcr"),

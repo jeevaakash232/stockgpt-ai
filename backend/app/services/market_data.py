@@ -216,6 +216,7 @@ def _build_market() -> list[dict]:
             "prev_call_oi":    prev_call_oi,
             "prev_put_oi":     prev_put_oi,
             "prev_ltp":        prev_ltp,
+            "prev_close":      yesterday_close,
             "pcr_change":      pcr_change,
             "pcr_change_pct":  pcr_change_pct,
             "expiry":          expiry,
